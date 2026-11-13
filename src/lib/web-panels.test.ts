@@ -46,10 +46,10 @@ describe("pinned web panels", () => {
   });
 
   it("gives each new panel an unused id", () => {
-    expect(newWebPanelId([])).toBe("panel-1");
-    expect(newWebPanelId([{ id: "panel-2", name: "A", url: "https://a.example/" }])).toBe("panel-3");
-    expect(newWebPanelId([{ id: "panel-1", name: "A", url: "https://a.example/" }, { id: "panel-2", name: "B", url: "https://b.example/" }]))
-      .toBe("panel-3");
+    const first = newWebPanelId([]);
+    expect(first).toMatch(/^panel-[a-f0-9-]{36}$/);
+    expect(newWebPanelId([])).not.toBe(first);
+    expect(newWebPanelId([{ id: first, name: "A", url: "https://a.example/" }])).not.toBe(first);
   });
 });
 
@@ -58,14 +58,14 @@ describe("a bot's chat page pinned to the sidebar", () => {
 
   it("pins a chat page under its title and unpins it again", () => {
     const pinned = togglePinnedPage([], page, "  Company   dashboard ");
-    expect(pinned).toEqual([{ id: "panel-1", name: "Company dashboard", page }]);
+    expect(pinned).toEqual([{ id: expect.any(String), name: "Company dashboard", page }]);
     expect(findPinnedPage(pinned, page)).toBe(pinned[0]);
     expect(togglePinnedPage(pinned, page, "Company dashboard")).toEqual([]);
   });
 
   it("keeps web panels beside it and never pins onto a full list", () => {
     const web = [{ id: "panel-1", name: "CI", url: "https://ci.example/" }];
-    expect(togglePinnedPage(web, page, "Sales")).toEqual([...web, { id: "panel-2", name: "Sales", page }]);
+    expect(togglePinnedPage(web, page, "Sales")).toEqual([...web, { id: expect.any(String), name: "Sales", page }]);
     const full = Array.from({ length: MAX_WEB_PANELS }, (_, i) => ({ id: `p${i}`, name: `P${i}`, url: `https://p${i}.example/` }));
     expect(togglePinnedPage(full, page, "Sales")).toBe(full);
   });

@@ -160,6 +160,11 @@ describe("encrypted full workspace backups", () => {
     db.close();
     try {
       json(join(source, "team-computers.json"), { version: 1, environmentId: "source-environment", computers: [{ id: "source-computer", name: "Source desktop", section: "Design" }] });
+      const navigation = { revision: 7, panels: [
+        { id: "brain", name: "Brain", url: "https://brain.example/" },
+        { id: "report", name: "Report", page: { botId: "bot", threadId: "thread", messageId: "msg" } },
+      ] };
+      json(join(source, "navigation.json"), navigation);
       const originalDb = readFileSync(join(source, "messages.db"));
       const originalRuntimeDb = readFileSync(join(source, "runtime.db"));
       const exported = await createWorkspaceBackup(source, {
@@ -197,6 +202,7 @@ describe("encrypted full workspace backups", () => {
       expect(existsSync(join(data, "cloud-owner.json"))).toBe(false);
       expect(existsSync(join(data, "data-format.json"))).toBe(false);
       expect(readJson(join(data, "config.json"))).toEqual({ language: "ja" });
+      expect(readJson(join(data, "navigation.json"))).toEqual(navigation);
       expect(readJson(join(data, "webhooks.json")).webhooks[0]).not.toHaveProperty("secretHash");
       expect(readFileSync(join(data, "webhooks.json"), "utf8")).not.toContain("sealed-");
       expect(commitPendingWorkspaceRestore(target, staged.id)).toMatchObject({ id: staged.id, restartRequired: true });
@@ -209,6 +215,7 @@ describe("encrypted full workspace backups", () => {
       expect(readFileSync(join(target, restoredBot.avatarUrl.slice("/api/".length)))).toEqual(AVATAR_BYTES);
       expect(readJson(join(target, "groups.json"))[0].cwd).toBe("/external/project");
       expect(readJson(join(target, "config.json"))).toEqual({ ...connections, language: "ja" });
+      expect(readJson(join(target, "navigation.json"))).toEqual(navigation);
       expect(readFileSync(join(target, "task-workspaces", "bot", "thread", "binary.bin"))).toEqual(Buffer.alloc(2 * 1024 * 1024, 0xa5));
       expect(readJson(join(target, "sessions.json"))).toEqual({ identity: "target-session" });
       expect(readJson(join(target, "cloud-owner.json"))).toEqual({ identity: "target-owner-record" });

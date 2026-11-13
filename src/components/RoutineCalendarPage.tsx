@@ -308,6 +308,7 @@ export function EventEditor({
   const [editorOpenedAt] = useState(() => Date.now());
   const [name, setName] = useState(existingRoutine?.name ?? existingCall?.name ?? seed.name ?? "");
   const [description, setDescription] = useState(existingRoutine?.prompt ?? existingCall?.description ?? seed.description ?? "");
+  const [startPaused, setStartPaused] = useState(false);
   const initialAt = existingRoutine?.schedule.type === "once"
     ? existingRoutine.schedule.at
     : existingRoutine?.schedule.type === "daily"
@@ -497,7 +498,7 @@ export function EventEditor({
           botId: lockedBotId ?? botIds[0] ?? "",
           groupId: routineTarget === "room-goal" && groupId ? groupId : null,
           runOn: routineTarget === "room-goal" ? "maus" : runOn,
-          enabled: existingRoutine && (existingRoutine.enabled || !isDone(existingRoutine, savedAt)) ? undefined : true,
+          enabled: !existingRoutine && startPaused ? false : existingRoutine && (existingRoutine.enabled || !isDone(existingRoutine, savedAt)) ? undefined : true,
           schedule: nextSchedule,
           durationMinutes,
           timeoutMinutes,
@@ -878,6 +879,11 @@ export function EventEditor({
             <span className="mt-3 size-4 shrink-0 rounded bg-accent" />
             <input autoFocus value={name} onChange={(event) => setName(event.target.value)} aria-label={t("routines.editor.titleLabel")} placeholder={kind === "routine" ? (advanced ? t("routines.event.addTitle") : t("routines.editor.titlePlaceholder")) : t("routines.event.addCallTitle")} className="min-w-0 flex-1 border-b border-hairline/60 bg-transparent px-1 pb-2 text-[22px] font-medium text-ink outline-none placeholder:text-ink-tertiary focus:border-accent" />
           </div>
+
+          {kind === "routine" && !existingRoutine && <label className="flex items-start gap-3 rounded-lg border border-hairline/50 px-3 py-2">
+            <input type="checkbox" aria-label={t("routines.pausedSchedule")} checked={startPaused} onChange={(event) => setStartPaused(event.target.checked)} />
+            <span><span className="block text-[13px] font-medium">{t("routines.pausedSchedule")}</span><span className="block text-[12px] text-ink-secondary">{t("routines.paused.help")}</span></span>
+          </label>}
 
           {advanced ? (
             <div className="flex items-start gap-4">

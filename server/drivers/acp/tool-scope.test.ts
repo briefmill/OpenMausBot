@@ -71,6 +71,30 @@ it("reads the actual configured Grok profile and refuses unknown profile sources
   expect(() => grokInheritedProfile("grok", { HOME: home, GROK_AGENT: "unverified" }, home)).toThrow(/existing agent profile/);
 });
 
+it("accepts quoted non-agent tables while preserving a quoted agent profile", () => {
+  const home = mkdtempSync(join(tmpdir(), "omb-grok-quoted-")); directories.push(home); mkdirSync(join(home, ".grok"));
+  const path = join(home, "reader.md");
+  writeFileSync(path, '---\nname: reader\ndescription: Existing restriction\ntools: [read_file]\ndisallowedTools: [write]\n---\n');
+  writeFileSync(join(home, ".grok/config.toml"), `[models."grok-4.7"]\nlabel="Default"\n["agent"]\nname="grok-build"\ndefinition=${JSON.stringify(path)}\n`);
+  const inherited = grokInheritedProfile("grok", { HOME: home }, home);
+  expect(inherited?.disallowedTools).toEqual(["write"]);
+  const scoped = grokToolScopeProfile({ allow: ["native:read_file", "native:write"] }, init, inherited);
+  expect(scoped.toolConfig.tools.map(tool => tool.name_override)).toEqual(["read_file"]);
+});
+
+it.each([
+  '["agent"]\nname="unverified"',
+  '[agent]\ntools=["write"]',
+  'agent = "unverified"',
+  '[agent.nested]\nname="grok-build"',
+  '[agent]\ndefinition="$HOME/profile.md"',
+  '[agent]\nname="grok-build"\nname="unverified"',
+])("refuses unverified agent configuration with a real TOML parser: %s", text => {
+  const home = mkdtempSync(join(tmpdir(), "omb-grok-invalid-")); directories.push(home); mkdirSync(join(home, ".grok"));
+  writeFileSync(join(home, ".grok/config.toml"), text);
+  expect(() => grokInheritedProfile("grok", { HOME: home }, home)).toThrow(/cannot be safely intersected/);
+});
+
 it("requires explicit Grok MCP helper permissions for a selected remote tool", () => {
   expect(() => grokToolScopeProfile({ allow: ["mcp:mail:read_notes"] }, init, undefined, true)).toThrow(/native:search_tool.*native:use_tool/);
   const profile = grokToolScopeProfile({ allow: ["native:search_tool", "native:use_tool", "mcp:mail:read_notes"] }, init, undefined, true);

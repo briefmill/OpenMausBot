@@ -105,6 +105,18 @@ export function SidebarBottomButtons() {
   );
 }
 
+export function PinnedPanelsNav() {
+  const { state, dispatch } = useStore();
+  const panels = useWebPanels();
+  if (!panels.length) return null;
+  return <nav aria-label="Pinned panels" className="flex flex-col items-center gap-1">{panels.map(panel => <NavRow
+    key={panel.id} id={`web-panel-${panel.id}`} label={panel.name} iconsOnly
+    active={state.activeView === "web-panel" && state.webPanelId === panel.id}
+    icon={() => panel.page ? <AppWindow size={18} /> : <Globe size={18} />}
+    onClick={() => dispatch({ type: "showWebPanel", id: panel.id })}
+  />)}</nav>;
+}
+
 export function SidebarFooterNav({
   density,
   rail = false,
@@ -144,7 +156,18 @@ export function SidebarFooterNav({
     icon={(active) => <FolderOpen size={iconSize} className={tone(active)} />}
     onClick={() => dispatch({ type: "showFiles" })}
   />;
-  if (!advanced && !iconsOnly) return null;
+  const panelRows = webPanels.map((panel) => (
+        <NavRow
+          key={panel.id}
+          id={`web-panel-${panel.id}`}
+          label={panel.name}
+          iconsOnly={iconsOnly || toolbar}
+          active={state.activeView === "web-panel" && state.webPanelId === panel.id}
+          icon={(active) => (panel.page ? <AppWindow size={iconSize} className={tone(active)} /> : <Globe size={iconSize} className={tone(active)} />)}
+          onClick={() => dispatch({ type: "showWebPanel", id: panel.id })}
+        />
+      ));
+  if (!advanced && !iconsOnly) return webPanels.length ? <nav aria-label={t("sidebar.tools")} className="flex flex-col gap-1">{panelRows}</nav> : null;
   const appsRow = iconsOnly && <NavRow
     id="apps"
     label={t("sidebar.nav.apps")}
@@ -155,7 +178,7 @@ export function SidebarFooterNav({
     icon={(active) => <Puzzle size={iconSize} className={tone(active)} />}
     onClick={() => dispatch({ type: "togglePlugins", open: true })}
   />;
-  if (rail) return <nav data-tour="tools" aria-label={t("sidebar.tools")} className="flex flex-col items-center gap-0.5">{appsRow}</nav>;
+  if (rail) return <nav data-tour="tools" aria-label={t("sidebar.tools")} className="flex flex-col items-center gap-0.5">{appsRow}{panelRows}</nav>;
 
   const rows = (
     <>
@@ -181,17 +204,7 @@ export function SidebarFooterNav({
         icon={(active) => <Rocket size={iconSize} className={tone(active)} />}
         onClick={() => dispatch({ type: "showPublishedApps" })}
       />
-      {advanced && webPanels.map((panel) => (
-        <NavRow
-          key={panel.id}
-          id={`web-panel-${panel.id}`}
-          label={panel.name}
-          iconsOnly={iconsOnly || toolbar}
-          active={state.activeView === "web-panel" && state.webPanelId === panel.id}
-          icon={(active) => (panel.page ? <AppWindow size={iconSize} className={tone(active)} /> : <Globe size={iconSize} className={tone(active)} />)}
-          onClick={() => dispatch({ type: "showWebPanel", id: panel.id })}
-        />
-      ))}
+      {panelRows}
     </>
   );
 

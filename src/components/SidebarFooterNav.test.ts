@@ -88,10 +88,10 @@ describe("sidebar footer places", () => {
     expect(render("comfortable").html).toMatch(/data-sidebar-nav="automations"[^>]*aria-current="page"/);
   });
 
-  it("adds a row per pinned web panel after Team map, in Advanced mode only", () => {
+  it("shows synced pinned panels in Simple and Advanced modes", () => {
     fixture.panels = [{ id: "panel-1", name: "Fleet board", url: "http://127.0.0.1:7841/" }];
     fixture.state = { ...fixture.state, activeView: "web-panel", webPanelId: "panel-1" };
-    expect(render("comfortable").html).toBe("");
+    expect(render("comfortable").html).toContain("Fleet board");
     fixture.advanced = true;
     const { html, nodes: tree } = render("comfortable");
     expect(html.indexOf('data-sidebar-nav="web-panel-panel-1"')).toBeGreaterThan(html.indexOf('data-sidebar-nav="team-map"'));

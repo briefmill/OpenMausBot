@@ -48,6 +48,15 @@ beforeEach(() => {
 afterEach(() => { act(() => root.unmount()); host.remove(); });
 
 describe("a pinned web panel's page", () => {
+  it("opens the Brain pin as an authenticated workspace view rather than an external frame", async () => {
+    fixture.panels = [{ id: "panel-1", name: "Brain", url: "https://graphify-brain-production.up.railway.app/viewer" }];
+    fixture.api.mockResolvedValueOnce({ scope: "bvs", records: [], limit: 20, fetchedAt: 1 });
+    await act(async () => root.render(createElement(WebPanelPage)));
+    expect(host.querySelector("iframe")).toBeNull();
+    expect(host.textContent).toContain("Graphify");
+    expect(fixture.api).toHaveBeenCalledWith(expect.stringContaining("/api/workspace/brain?scope=bvs"), expect.anything());
+  });
+
   it("frames another site's page", () => {
     fixture.panels = [{ id: "panel-1", name: "Fleet board", url: "http://127.0.0.1:7841/" }];
     act(() => root.render(createElement(WebPanelPage)));

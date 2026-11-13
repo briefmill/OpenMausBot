@@ -4,6 +4,7 @@ import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { parse as parseYaml } from "yaml";
+import { parse as parseToml } from "smol-toml";
 
 import type { ModelCatalog } from "../../contracts.ts";
 import { harnessHome, splitCliString } from "../../env-path.ts";
@@ -276,23 +277,16 @@ export function grokInheritedProfile(cli: string, env: Record<string, string | u
   for (const file of files) {
     if (!existsSync(file)) continue;
     const text = readFileSync(file, "utf8"); if (text.length > 262_144) return unsupported();
-    // A small TOML subset over the whole file; unsupported syntax refuses the scoped turn.
-    let section = "";
-    for (const line of text.split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith("#"))) {
-      const header = /^\[([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)\]\s*(?:#.*)?$/.exec(line);
-      if (header) { section = header[1]!; if (section.startsWith("agent.")) return unsupported(); continue; }
-      const assignment = /^([A-Za-z0-9_-]+)\s*=\s*(.+)$/.exec(line);
-      if (!assignment || /'''|"""/.test(assignment[2]!) || (!section && assignment[1] === "agent")) return unsupported();
-      if (section !== "agent") continue;
-      const match = /^(name|definition)\s*=\s*("(?:[^"\\]|\\.)*"|'[^']*')\s*(?:#.*)?$/.exec(line);
-      if (!match) return unsupported();
-      let value: string;
-      try { value = match[2]!.startsWith('"') ? JSON.parse(match[2]!) as string : match[2]!.slice(1, -1); }
-      catch { return unsupported(); }
-      // Grok expands environment variables in paths.
-      if (value.includes("$") || !value) return unsupported();
-      if (match[1] === "name" && value !== "grok-build") return unsupported();
-      if (match[1] === "definition" && flag < 0) {
+    let config: Record<string, unknown>;
+    try { config = parseToml(text); }
+    catch { return unsupported(); }
+    if (!Object.hasOwn(config, "agent")) continue;
+    const agent = config.agent;
+    if (!agent || typeof agent !== "object" || Array.isArray(agent)) return unsupported();
+    for (const [key, value] of Object.entries(agent)) {
+      if ((key !== "name" && key !== "definition") || typeof value !== "string" || !value || value.includes("$")) return unsupported();
+      if (key === "name" && value !== "grok-build") return unsupported();
+      if (key === "definition" && flag < 0) {
         if (path !== undefined && path !== value) return unsupported();
         path = value;
       }
