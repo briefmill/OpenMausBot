@@ -1,0 +1,59 @@
+name: Build Briefmill desktops
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/update-v0.1.155]
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm clean
+      - run: pnpm package:prepare
+      - if: runner.os == 'Windows'
+        run: pnpm build:cua:win
+      - if: runner.os == 'Linux'
+        run: pnpm build:cua:linux
+      - if: runner.os == 'Windows'
+        run: pnpm exec electron-builder --config electron-builder.briefmill.yml --win --publish never
+      - if: runner.os == 'Linux'
+        run: pnpm exec electron-builder --config electron-builder.briefmill.yml --linux --x64 --publish never
+      - name: Verify packaged server and fork update feed
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then tree=release/win-unpacked; else tree=release/linux-unpacked; fi
+          res="$tree/resources"
+          grep -Eq '^owner: briefmill$' "$res/app-update.yml"
+          grep -Eq '^repo: OpenMausBot$' "$res/app-update.yml"
+          node scripts/check-module-scopes.mjs "$res"
+          OMB_SMOKE_DIST="$res/server" node scripts/smoke-packaged-server.mjs --browser-bundle "$res/browser-engine"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: briefmill-desktop-${{ runner.os }}-${{ github.sha }}
+          path: |
+            release/*.exe
+            release/*.zip
+            release/*.rpm
+            release/*.AppImage
+            release/*.blockmap
+            release/latest*.yml
+          if-no-files-found: error
+          retention-days: 14

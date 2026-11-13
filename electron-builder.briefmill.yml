@@ -1,0 +1,18 @@
+extends: ./electron-builder.yml
+
+publish:
+  - provider: github
+    owner: briefmill
+    repo: OpenMausBot
+
+linux:
+  target:
+    - target: AppImage
+      arch: x64
+    - target: rpm
+      arch: x64
+  maintainer: Locksley Lennox <191432487+briefmill@users.noreply.github.com>
+
+rpm:
+  afterInstall: build/linux-after-install.sh
+  afterRemove: build/linux-after-remove.sh
