@@ -1,4 +1,5 @@
 import { SidebarConnectApps } from "./SidebarConnectApps";
+import { PinnedPanelsNav } from "./SidebarFooterNav";
 import { SidebarPlaceStatus, useSimplePlace } from "./SidebarFooter";
 import { SidebarProfileMenu, useSimpleAccount, type ArchivedBots } from "./SidebarProfileMenu";
 import { UpdateIndicator } from "./UpdateIndicator";
@@ -15,6 +16,7 @@ export function SimpleRailFooter({ owner = null, archived }: {
   const account = useSimpleAccount(place, owner, archived);
   return (
     <div data-sidebar-rail-footer="" className="relative flex flex-col items-center gap-2 px-2 pb-4 pt-2">
+      <PinnedPanelsNav />
       <SidebarConnectApps circle />
       <UpdateIndicator />
       <SidebarProfileMenu iconOnly rail simple={account} />

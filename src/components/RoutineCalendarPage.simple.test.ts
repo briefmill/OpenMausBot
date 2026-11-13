@@ -275,6 +275,24 @@ describe("routine drawer", () => {
 });
 
 describe("routine editor", () => {
+  it("can create a paused routine without first enabling a schedule", () => {
+    fixture.values = [];
+    const props = {
+      seed: { kind: "routine" as const, at: Date.now() + 3_600_000, durationMinutes: 30, botIds: [bot.id], name: "Paused fixture", description: "Synthetic fixture only" },
+      bots: [bot], onClose: vi.fn(), onSavedCall: vi.fn(),
+    };
+    let tree = capture(() => EventEditor(props));
+    const paused = tree.find(node => node.type === "input" && node.props["aria-label"] === "Paused")!;
+    expect(paused.props.checked).toBe(false);
+    (paused.props.onChange as (event: unknown) => void)({ target: { checked: true } });
+    tree = capture(() => EventEditor(props));
+    click(buttons(tree).get("Save"));
+    const [path, init] = fixture.api.mock.calls.at(-1) as unknown as [string, { method: string; body: string }];
+    expect(path).toBe("/api/routines");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toMatchObject({ enabled: false, name: "Paused fixture" });
+  });
+
   const editor = (routineToEdit?: Routine) => markup(createElement(EventEditor, {
     seed: { kind: "routine", at: Date.now() + 3_600_000, durationMinutes: 30, botIds: [bot.id], routine: routineToEdit },
     bots: [bot], onClose: vi.fn(), onSavedCall: vi.fn(),

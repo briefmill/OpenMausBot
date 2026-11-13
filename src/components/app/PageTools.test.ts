@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BotEditorStore, type Message, type useStore } from "@/state/store";
 import { setAdvancedMode } from "@/lib/interface-mode";
 import { addPointedChip, forgetPointedChips, setPointedNote, takePointedChips, usePointedChips } from "@/lib/pointed-chips";
-import { setWebPanels } from "@/lib/web-panel-preferences";
+import { latestWebPanels, setWebPanels } from "@/lib/web-panel-preferences";
 import { MAX_WEB_PANELS } from "@/lib/web-panels";
 import type { AppPayload } from "../../../shared/app";
 import type { PublishedPageCard } from "../../../shared/published-page";
@@ -219,7 +219,7 @@ describe("a bot's page in the chat", () => {
     expect(overlay()).toBeNull();
   });
 
-  it("pins the page to the sidebar and unpins it, only in Advanced mode, where pinned panels show", async () => {
+  it("pins the page to the sidebar and unpins it, with pin controls in Advanced mode", async () => {
     setWebPanels([]);
     setAdvancedMode(false);
     await render(row(payload()));
@@ -227,12 +227,12 @@ describe("a bot's page in the chat", () => {
 
     act(() => setAdvancedMode(true));
     await click("Pin to sidebar", card());
-    expect(JSON.parse(localStorage.getItem("omb-web-panels")!)).toEqual([
-      { id: "panel-1", name: "Pricing", page: { botId: "pepper", threadId: "t1", messageId: "a1" } },
+    expect(latestWebPanels()).toEqual([
+      { id: expect.any(String), name: "Pricing", page: { botId: "pepper", threadId: "t1", messageId: "a1" } },
     ]);
     expect(button("Unpin", card()).getAttribute("aria-pressed")).toBe("true");
     await click("Unpin", card());
-    expect(JSON.parse(localStorage.getItem("omb-web-panels")!)).toEqual([]);
+    expect(latestWebPanels()).toEqual([]);
 
     act(() => setWebPanels(Array.from({ length: MAX_WEB_PANELS }, (_, i) => ({ id: `p${i}`, name: `P${i}`, url: `https://p${i}.example/` }))));
     expect(button("Pin to sidebar", card()).disabled).toBe(true);
@@ -244,14 +244,14 @@ describe("a bot's page in the chat", () => {
     setWebPanels([]);
     setAdvancedMode(true);
     await render(row(payload()));
-    // Another window's write whose storage event hasn't arrived yet.
-    localStorage.setItem("omb-web-panels", JSON.stringify([{ id: "panel-9", name: "Other", url: "https://other.example/" }]));
+    // A synchronized update arrives between render and click.
+    setWebPanels([{ id: "panel-9", name: "Other", url: "https://other.example/" }]);
     await click("Pin to sidebar", card());
-    expect(JSON.parse(localStorage.getItem("omb-web-panels")!).map((panel: { name: string }) => panel.name)).toEqual(["Other", "Pricing"]);
+    expect(latestWebPanels().map((panel: { name: string }) => panel.name)).toEqual(["Other", "Pricing"]);
     // The other window unpins everything; Unpin here must not pin the page again.
-    localStorage.setItem("omb-web-panels", "[]");
+    setWebPanels([]);
     await click("Unpin", card());
-    expect(localStorage.getItem("omb-web-panels")).toBe("[]");
+    expect(latestWebPanels()).toEqual([]);
     act(() => { setWebPanels([]); setAdvancedMode(false); });
   });
 

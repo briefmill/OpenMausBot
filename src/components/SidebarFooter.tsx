@@ -35,6 +35,7 @@ function SimpleSidebarFooter({ owner, archived }: { owner: string | null; archiv
   const openAccount = () => footer.current?.querySelector("[data-sidebar-account]")?.closest("button")?.click();
   return (
     <div ref={footer} data-sidebar-footer="simple" className="px-4 pb-4 pt-2">
+      <SidebarFooterNav density="comfortable" />
       <CloudRoomCard />
       <CloudUsageCard />
       <SidebarPlaceStatus place={place} className="mb-2 px-1" />

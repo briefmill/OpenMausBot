@@ -3,6 +3,8 @@
 // never loads) falls back to a button that opens it in the browser.
 // A pinned chat page (a bot's show_html page) is fetched from the server and
 // framed exactly as the chat frames it.
+import { BRAIN_PANEL_URL } from "../../shared/brain-view";
+import { BrainPanel } from "./BrainPanel";
 import { AppWindow, ExternalLink, Globe, PinOff, RotateCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -42,7 +44,7 @@ export function WebPanelPage() {
   // The browser fires load on a frame it refused, so only the page's headers, read by the server, tell.
   useEffect(() => {
     const url = panel?.url;
-    if (!url) return;
+    if (!url || url === BRAIN_PANEL_URL) return;
     const check = new AbortController();
     api<{ framing?: string }>(`/api/web-panels/framing?url=${encodeURIComponent(url)}&origin=${encodeURIComponent(window.location.origin)}`, { background: true, signal: check.signal })
       .then(({ framing }) => setRefusedUrl(framing === "blocked" ? url : undefined), () => undefined);
@@ -51,6 +53,7 @@ export function WebPanelPage() {
 
   if (!panel) return null;
   if (panel.page) return <PinnedChatPageView key={panel.id} panel={panel} page={panel.page} panels={panels} />;
+  if (panel.url === BRAIN_PANEL_URL) return <BrainPanel />;
   const refused = refusedUrl === panel.url;
   const openInBrowser = () => void openExternalLink(panel.url).catch(() => undefined);
 

@@ -1,7 +1,8 @@
+import { BRAIN_PANEL_URL } from "../../shared/brain-view";
 import { useState } from "react";
 
 import { t } from "@/lib/i18n";
-import { setWebPanels, useWebPanels } from "@/lib/web-panel-preferences";
+import { latestWebPanels, setWebPanels, useWebPanels, useWebPanelsSyncStatus } from "@/lib/web-panel-preferences";
 import { MAX_WEB_PANELS, MAX_WEB_PANEL_NAME, newWebPanelId, validateWebPanel } from "@/lib/web-panels";
 
 import { cn } from "@/lib/cn";
@@ -11,6 +12,7 @@ import { SettingsDialog } from "./settings/SettingsDialog";
 /** Settings → General: pages pinned to the sidebar (Advanced mode). */
 export function PinnedPanelsSettings() {
   const panels = useWebPanels();
+  const syncStatus = useWebPanelsSyncStatus();
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [error, setError] = useState<"name" | "url" | "self" | "">("");
@@ -23,7 +25,9 @@ export function PinnedPanelsSettings() {
       setError(check.error);
       return false;
     }
-    setWebPanels([...panels, { id: newWebPanelId(panels), name: check.name, url: check.url }]);
+    const latest = latestWebPanels();
+    if (latest.length >= MAX_WEB_PANELS) return false;
+    setWebPanels([...latest, { id: newWebPanelId(latest), name: check.name, url: check.url }]);
     setName("");
     setUrl("");
     setError("");
@@ -33,13 +37,21 @@ export function PinnedPanelsSettings() {
   const close = () => { setAdding(false); setName(""); setUrl(""); setError(""); };
   return (
     <SettingsGroup label={t("webPanels.settings.title")} block="pinned-panels" description={t("webPanels.settings.short")}
-      actions={<button type="button" className="ui-button" disabled={full} onClick={() => setAdding(true)}>{t("webPanels.settings.addPage")}</button>}
+      actions={<><button type="button" className="ui-button" disabled={full || panels.some(panel => panel.url === BRAIN_PANEL_URL)} onClick={() => {
+        const latest = latestWebPanels();
+        if (latest.length < MAX_WEB_PANELS && !latest.some(panel => panel.url === BRAIN_PANEL_URL)) setWebPanels([...latest, { id: newWebPanelId(latest), name: "Brain", url: BRAIN_PANEL_URL }]);
+      }}>Pin Brain</button><button type="button" className="ui-button" disabled={full} onClick={() => setAdding(true)}>{t("webPanels.settings.addPage")}</button></>}
       footnote={full ? t("webPanels.settings.full", { max: MAX_WEB_PANELS }) : t("webPanels.settings.help")}>
       <SettingsRows>
+        <p role="status" className="px-3 py-2 text-xs text-muted">
+          {syncStatus === "synced" ? "Pinned panels are synced across this workspace’s devices."
+            : syncStatus === "error" ? "Pinned panels could not sync. Keep this window open; changes will retry when connected."
+            : syncStatus === "pending" ? "Syncing pinned panels…" : "Loading shared pinned panels…"}
+        </p>
         {panels.length === 0 && <SettingsEmptyRow>{t("webPanels.settings.empty")}</SettingsEmptyRow>}
         {panels.map((panel) => (
           <SettingRow key={panel.id} title={panel.name} subtitle={<span className="block truncate" title={panel.url}>{panel.url ?? t("webPanels.settings.chatPage")}</span>}>
-            <button type="button" data-danger="" className="settings-quiet cursor-pointer" onClick={() => setWebPanels(panels.filter((entry) => entry.id !== panel.id))}>
+            <button type="button" data-danger="" className="settings-quiet cursor-pointer" onClick={() => setWebPanels(latestWebPanels().filter((entry) => entry.id !== panel.id))}>
               {t("webPanels.settings.remove")}
             </button>
           </SettingRow>

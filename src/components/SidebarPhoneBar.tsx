@@ -1,8 +1,9 @@
-import { FolderOpen, LayoutGrid, Puzzle, Rocket, Search, UsersRound, X, Zap } from "lucide-react";
+import { AppWindow, FolderOpen, Globe, LayoutGrid, Puzzle, Rocket, Search, UsersRound, X, Zap } from "lucide-react";
 
 import { useCloudFilesReady } from "@/lib/cloud-files";
 import { t } from "@/lib/i18n";
 import { useStore } from "@/state/store";
+import { useWebPanels } from "@/lib/web-panel-preferences";
 
 import { CloudRoomCard } from "./CloudRoomCard";
 import { CloudUsageCard } from "./CloudUsageMeter";
@@ -13,9 +14,17 @@ import { UpdateIndicator } from "./UpdateIndicator";
 /** The phone's bottom bar: a round button for the tools that are rows in the desktop sidebar, and a search pill. */
 export function SidebarPhoneBar({ query, onQuery }: { query: string; onQuery: (query: string) => void }) {
   const { state, dispatch } = useStore();
+  const panels = useWebPanels();
   const automationsNeedYou = useAutomationsNeedYou();
   const filesReady = useCloudFilesReady();
   const items: SidebarMenuItem[] = [
+    ...panels.map(panel => ({
+      key: `web-panel-${panel.id}`,
+      label: panel.name,
+      icon: panel.page ? <AppWindow size={18} /> : <Globe size={18} />,
+      active: state.activeView === "web-panel" && state.webPanelId === panel.id,
+      onSelect: () => dispatch({ type: "showWebPanel" as const, id: panel.id }),
+    })),
     {
       key: "automations",
       label: t("sidebar.nav.automations"),
