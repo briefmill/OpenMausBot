@@ -19,7 +19,7 @@ This fixture uses an offline backup-admin role with CHOWN, SETUID, SETGID and DA
 ## Remaining operational gates
 
 - Stop and independently verify the worker processes before exporting. The generic archive API does not acquire the service supervisor lock or prove shutdown for the operator.
-- Build a trusted backup/restore wrapper that owns the stopped-state check, journal exclusion lock and a consistent authority snapshot. Reject live or changing sources; do not infer shutdown from an absent lease file.
+- service-snapshot.mjs now provides the trusted snapshot critical section: it takes the supervisor exclusion lock, refuses unresolved/foreign journal authority, independently probes shutdown before and after capture, and releases the lock on failure. Four tests pass on Windows and actual Linux. Integrate it with encrypted archive capture and qualify restore/quarantine orchestration before calling recovery operational. The caller must supply a real namespace process probe; a journal flag or missing lease file is insufficient.
 - Restore into quarantine, verify archive/binding/ownership and compare controller job authority before admitting work. Never initialize a foreign volume or silently reset consumed generations.
 - A snapshot proves only the receipts it contains. Jobs executed after the snapshot require reconciliation against the surviving controller and external effects. Do not replay them from an older journal.
 - Qualify uncertain-owner recovery, interrupted restore, rollback and real Railway volume replacement. The fixture restores a known stopped completed journal, not a live model process or an unknown external action.
