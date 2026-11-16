@@ -235,6 +235,8 @@ import { createGoalCards, type LiveGoalRun } from "./host/goal-cards.ts";
 import { createOneOnOneGoals } from "./host/one-on-one-goals.ts";
 
 import { BUILT_IN_DRIVERS } from "./drivers/builtIn.ts";
+import { withWorkerDriver } from "./workers/registration.ts";
+import { loadConfiguredWorkerStartup } from "./workers/startup.mjs";
 import { openCodeProviderKeysAllowed, setOpenCodeProviderKeyPolicy } from "./drivers/acp/opencode-go.ts";
 import { forgetNotificationReader, liveAppRows, openCardRows, readMessageText, recallMessages, recentMessages, closeMessageSearch, closeMessageDb, chatFollowups, cancelledChatFollowup, settleChatFollowups, threadsReferencing, logNotification, lastRowAt, threadsWithCardsSince } from "./message-db.ts";
 import { briefCrossingLabel, claimRecallCrossings, recallCrossingLabel } from "./recall-disclosure.ts";
@@ -817,9 +819,19 @@ function customDomainStatus() {
     serverIpv4: DESKTOP_MANAGED ? null : customDomainIpv4(),
   };
 }
-const registry = new ProviderRegistry(BUILT_IN_DRIVERS, { statusFile: join(DATA_DIR, "providers", "engine-status.json") });
+const workerStartup = await loadConfiguredWorkerStartup({
+  configFile: process.env.OMB_WORKER_HOST_CONFIG, dataDir: DATA_DIR, run: vps.defaultRunner, route: vps.vpsDockerArgs,
+  resolveTurn: (botId, threadId) => {
+    const owner = store.botByThread(threadId);
+    const request = store.messagesFor(threadId).findLast(message => message.role === "user");
+    return { bot: owner?.id, thread: threadId, requestId: request?.id,
+      active: owner?.id === botId && request?.requestPending === true };
+  },
+}).catch(() => { console.error("workers: host configuration unavailable; existing providers remain enabled"); return null; });
+const providerDrivers = withWorkerDriver(BUILT_IN_DRIVERS, workerStartup?.bootstrap);
+const registry = new ProviderRegistry(providerDrivers, { statusFile: join(DATA_DIR, "providers", "engine-status.json") });
 const supportsApprovalMode = createApprovalModeSupport(registry);
-registerEnginesBinDir(); const engineUpdates = engineUpdatesFor({ drivers: BUILT_IN_DRIVERS, turnRunning: () => store.bots.some((bot) => botHasActiveTurn(bot.id)) || store.groups.some(groupIsWorking) || Boolean(routines?.hasActiveRuns()), configuredClis: () => Object.values(providerConfigs()).flatMap((entry) => { const cli = (entry.config as { cli?: unknown } | undefined)?.cli; return typeof cli === "string" && cli ? [cli] : []; }), updated: () => { registry.forgetSnapshots(); broadcast({ kind: "config", ...configStatus() }); } });
+registerEnginesBinDir(); const engineUpdates = engineUpdatesFor({ drivers: providerDrivers, turnRunning: () => store.bots.some((bot) => botHasActiveTurn(bot.id)) || store.groups.some(groupIsWorking) || Boolean(routines?.hasActiveRuns()), configuredClis: () => Object.values(providerConfigs()).flatMap((entry) => { const cli = (entry.config as { cli?: unknown } | undefined)?.cli; return typeof cli === "string" && cli ? [cli] : []; }), updated: () => { registry.forgetSnapshots(); broadcast({ kind: "config", ...configStatus() }); } });
 
 // Set only when a turn is admitted, never on queue or steer, so a second person's words cannot re-book the first person's turn.
 const turnTriggers = new Map<string, UsageTrigger>();
@@ -1524,7 +1536,7 @@ function computerPlaceRefusal(kind: ComputerKind): { message: string; code: "clo
   return managed ? { message: managed, code: "managed_policy" } : undefined;
 }
 function policyModelRefusal(instance: { instanceId: string; driverKind: string }): string | undefined {
-  const engine = BUILT_IN_DRIVERS.find(driver => driver.driverKind === instance.driverKind)?.metadata.displayName;
+  const engine = providerDrivers.find(driver => driver.driverKind === instance.driverKind)?.metadata.displayName;
   return managedPolicy.modelRefusal({ driverKind: instance.driverKind, displayName: engine }, managedDesktop.owns(instance.instanceId));
 }
 const managedDesktop = new ManagedDesktopProviders({
@@ -15395,7 +15407,7 @@ const gracefulShutdown = createGracefulShutdown({
       tunnelListener?.close(); void tailnetShare.close(); phoneRelay?.stop(); stopCloudHomeConnectedApps();
     },
     () => phoneScreen.closeAll(),
-    async () => { await managedDesktop.close(); await registry.disposeAll(); },
+    async () => { await managedDesktop.close(); await registry.disposeAll(); await workerStartup?.close(); },
     async () => { await dataEngine.closeAll().catch((error) => console.warn("data: close failed", error)); },
     async () => {
       const temporaries = [...temporaryBrowserSessions.keys()].map((botId) => forgetTemporaryBrowser(botId));

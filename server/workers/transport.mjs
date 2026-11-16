@@ -24,7 +24,8 @@ async function jsonBody(req, limit = 70_000) {
 
 // Loopback is the default. A host-selected remote binding requires mutual TLS.
 export async function listenTransport({ ledger, controllerToken, workers, leaseMs = 30_000, tls,
-  listenHost='127.0.0.1',advertisedHost='127.0.0.1' }) {
+  listenHost='127.0.0.1',advertisedHost='127.0.0.1',port=0 }) {
+  if(!Number.isSafeInteger(port) || port<0 || port>65535)throw Error('Invalid worker listener port');
   if(!['127.0.0.1','0.0.0.0'].includes(listenHost) || !validWorkerHost(advertisedHost) || advertisedHost==='0.0.0.0' ||
      ((listenHost!=='127.0.0.1' || advertisedHost!=='127.0.0.1') && !tls))throw Error('Explicit mutual TLS remote binding required');
   workers = structuredClone(workers);
@@ -152,7 +153,7 @@ export async function listenTransport({ ledger, controllerToken, workers, leaseM
       send(error.status ?? 409, { error: error.status ? error.message : 'Job operation rejected' });
     }
   });
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, listenHost, resolve); });
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, listenHost, resolve); });
   return {
     origin: `${tls ? 'https' : 'http'}://${advertisedHost}:${server.address().port}`,
     close: () => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())),

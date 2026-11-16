@@ -5,7 +5,7 @@ import {createContainerExecution} from './container-execution.mjs';
 import {createRemoteExecution} from './remote-execution.mjs';
 
 export function createContainerWorkerCoordinator({file,assignments,resolveTurn,pools,policies,run,dockerArgs,
-  namespace,storage,admit,health,signal}) {
+  namespace,storage,admit,health,signal,onStopped=()=>{}}) {
   if(typeof admit!=='function' || typeof health!=='function' || typeof storage?.ensure!=='function' ||
      typeof storage.verify!=='function' || !Array.isArray(assignments))throw Error('Complete trusted container host required');
   const approved=structuredClone(assignments),catalog=structuredClone(policies);
@@ -26,7 +26,11 @@ export function createContainerWorkerCoordinator({file,assignments,resolveTurn,p
   const executeWorker=createContainerExecution({run,dockerArgs,supervisor,resolveAgent:async({job})=>structuredClone(selected(job).policy.agent)});
   let relay;
   const coordinator=createWorkerCoordinator({file,assignments:approved,resolveTurn,pools,signal,host:{
-    admit,health,launch,execute:args=>relay(args),stop:supervisor.stop,inspectStopped:supervisor.inspectStopped,
+    admit,health,launch,execute:args=>relay(args),stop:supervisor.stop,inspectStopped:async identity=>{
+      const stopped=await supervisor.inspectStopped(identity);
+      if(stopped)await onStopped(identity);
+      return stopped;
+    },
   }});
   relay=createRemoteExecution({ledger:coordinator.ledger,executeWorker});
   return{...coordinator,supervisor};
