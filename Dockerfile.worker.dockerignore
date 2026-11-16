@@ -23,3 +23,4 @@
 !dist-worker/runtime-probe-server.mjs
 !dist-worker/worker-mcp-bridge.mjs
 !dist-worker/worker-mcp-stdio.mjs
+!dist-worker/worker-tool-proxy.mjs
