@@ -4,6 +4,7 @@ import {createServiceWorkerCoordinator} from './service-controller.mjs';
 import {createServiceClient} from './service-client.mjs';
 import {listenTransport} from './transport.mjs';
 import {createHostAdmission} from './host-admission.mjs';
+import {openAccountScopedWorkerTools} from './mounted-controller-tools.mjs';
 
 const exact=(value,keys)=>value && typeof value==='object' && !Array.isArray(value) &&
   Object.keys(value).sort().join(',')===[...keys].sort().join(',');
@@ -13,10 +14,11 @@ const read=file=>{
 };
 
 export async function loadConfiguredServiceStartup({config,dataDir,resolveTurn,openTools}) {
-  if(!exact(config,['version','kind','maxRunning','assignments','pools','services','transport']) || config.version!==2 || config.kind!=='services' ||
+  if(!exact(config,['version','kind','maxRunning','assignments','pools','services','transport',...(Object.hasOwn(config ?? {},'toolRelay')?['toolRelay']:[])]) || (Object.hasOwn(config ?? {},'toolRelay') && typeof config.toolRelay!=='boolean') || config.version!==2 || config.kind!=='services' ||
      !Number.isSafeInteger(config.maxRunning) || config.maxRunning<1 || config.maxRunning>64 ||
      !Array.isArray(config.assignments) || !config.assignments.length || config.assignments.length>64 || typeof resolveTurn!=='function')
     throw Error('Invalid operator service configuration');
+  if(config.toolRelay===true && openTools===undefined)openTools=openAccountScopedWorkerTools;
   const ids=config.assignments.map(row=>row.worker),t=config.transport;
   if(new Set(ids).size!==ids.length || !config.services || typeof config.services!=='object' ||
      Object.keys(config.services).sort().join(',')!==[...ids].sort().join(',') ||
