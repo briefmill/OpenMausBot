@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { validWorkerHost } from './transport-address.mjs';
 
 const digest = value => createHash('sha256').update(value).digest();
 const denied = (status, message) => Object.assign(Error(message), { status });
@@ -20,8 +21,11 @@ async function jsonBody(req, limit = 70_000) {
   catch { throw denied(400, 'Invalid JSON'); }
 }
 
-// Loopback-only candidate. Remote deployment requires a reviewed TLS tunnel or mTLS.
-export async function listenTransport({ ledger, controllerToken, workers, leaseMs = 30_000, tls }) {
+// Loopback is the default. A host-selected remote binding requires mutual TLS.
+export async function listenTransport({ ledger, controllerToken, workers, leaseMs = 30_000, tls,
+  listenHost='127.0.0.1',advertisedHost='127.0.0.1' }) {
+  if(!['127.0.0.1','0.0.0.0'].includes(listenHost) || !validWorkerHost(advertisedHost) || advertisedHost==='0.0.0.0' ||
+     ((listenHost!=='127.0.0.1' || advertisedHost!=='127.0.0.1') && !tls))throw Error('Explicit mutual TLS remote binding required');
   workers = structuredClone(workers);
   if (tls) {
     exact(tls, ['key', 'cert', 'ca', 'controllerPin', 'workerPins']);
@@ -56,7 +60,7 @@ export async function listenTransport({ ledger, controllerToken, workers, leaseM
       res.end(JSON.stringify(value));
     };
     try {
-      const expectedHost = `127.0.0.1:${server.address().port}`;
+      const expectedHost = `${advertisedHost}:${server.address().port}`;
       if (req.headers.host !== expectedHost || req.headers.origin) throw denied(403, 'Forbidden');
       const match = /^Bearer ([^\s]{32,512})$/.exec(req.headers.authorization ?? '');
       const candidate = digest(match?.[1] ?? '');
@@ -151,9 +155,9 @@ export async function listenTransport({ ledger, controllerToken, workers, leaseM
       send(error.status ?? 409, { error: error.status ? error.message : 'Job operation rejected' });
     }
   });
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, listenHost, resolve); });
   return {
-    origin: `${tls ? 'https' : 'http'}://127.0.0.1:${server.address().port}`,
+    origin: `${tls ? 'https' : 'http'}://${advertisedHost}:${server.address().port}`,
     close: () => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())),
   };
 }

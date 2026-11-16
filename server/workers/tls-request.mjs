@@ -1,11 +1,12 @@
 import { Agent, request } from 'node:https';
 import { checkServerIdentity } from 'node:tls';
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { validWorkerOrigin } from './transport-address.mjs';
 
 // The host and port are fixed by trusted bootstrap. Redirects and caller-supplied
 // TLS verification overrides are not supported.
-export function tlsRequester(origin, tls) {
-  if (!/^https:\/\/127\.0\.0\.1:\d+$/.test(origin) || !tls ||
+export function tlsRequester(origin, tls, {allowRemote=false}={}) {
+  if (typeof origin!=='string' || !origin.startsWith('https:') || !validWorkerOrigin(origin,allowRemote) || !tls ||
       Object.keys(tls).sort().join(',') !== 'ca,cert,key,serverPin' ||
       typeof tls.serverPin !== 'string' || !/^[a-f0-9]{64}$/.test(tls.serverPin) ||
       ![tls.key, tls.cert, tls.ca].every(v => (typeof v === 'string' || Buffer.isBuffer(v)) && v.length))

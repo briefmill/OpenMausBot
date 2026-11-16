@@ -10,14 +10,24 @@ import {JobLedger} from './ledger.mjs';
 import {listenTransport} from './transport.mjs';
 import {tlsRequester} from './tls-request.mjs';
 import {workerClient} from './worker-client.mjs';
+import {validWorkerOrigin} from './transport-address.mjs';
 const assignment={bot:'b',thread:'t',project:'p',resource:'desktop'};
 const token='w'.repeat(40),controllerToken='c'.repeat(40);
+test('remote endpoint selection requires explicit TLS and rejects URL overrides',async()=>{
+ assert.equal(validWorkerOrigin('https://worker.example:8443'),false);
+ assert.equal(validWorkerOrigin('https://worker.example:8443',true),true);
+ for(const origin of ['http://worker.example:8443','https://user@worker.example:8443','https://worker.example:8443/path','https://worker.example:8443?x=1','https://worker.example:99999'])
+  assert.equal(validWorkerOrigin(origin,true),false);
+ const ledger=new JobLedger(':memory:');
+ try{await assert.rejects(listenTransport({ledger,controllerToken,workers:[],listenHost:'0.0.0.0',advertisedHost:'worker.example'}),/mutual TLS/);}
+ finally{ledger.close();}
+});
 function certificates(dir){
  const run=args=>execFileSync('openssl',args,{cwd:dir,stdio:'ignore'});
  run(['req','-x509','-newkey','rsa:2048','-nodes','-keyout','ca.key','-out','ca.crt','-days','1','-subj','/CN=disposable-worker-fixture']);
  for(const name of ['server','controller','worker','outsider']){
   run(['req','-new','-newkey','rsa:2048','-nodes','-keyout',name+'.key','-out',name+'.csr','-subj','/CN='+name]);
-  writeFileSync(join(dir,name+'.ext'),name==='server'?'subjectAltName=IP:127.0.0.1\nextendedKeyUsage=serverAuth':'extendedKeyUsage=clientAuth');
+  writeFileSync(join(dir,name+'.ext'),name==='server'?'subjectAltName=IP:127.0.0.1,DNS:localhost\nextendedKeyUsage=serverAuth':'extendedKeyUsage=clientAuth');
   run(['x509','-req','-in',name+'.csr','-CA','ca.crt','-CAkey','ca.key','-CAcreateserial','-out',name+'.crt','-days','1','-extfile',name+'.ext']);
  }
  const ca=readFileSync(join(dir,'ca.crt'));const peer=name=>({ca,key:readFileSync(join(dir,name+'.key')),cert:readFileSync(join(dir,name+'.crt'))});
@@ -58,4 +68,21 @@ test('worker client refuses remote cleartext and TLS verification overrides befo
  assert.throws(()=>workerClient({origin:'http://127.0.0.1:443',token,tls:{}}),/Explicit/);
  assert.throws(()=>tlsRequester('https://127.0.0.1:443',{ca:'x',key:'x',cert:'x',rejectUnauthorized:false}),/mutual TLS/);
  assert.throws(()=>tlsRequester('https://127.0.0.1:443',{ca:'x',key:'x',cert:'x'}),/mutual TLS/);
+});
+
+test('explicit named endpoint retains mutual TLS role binding and server pin checks',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'maus-named-mtls-')),ledger=new JobLedger(':memory:'),certs=certificates(dir);
+ let transport;const clients=[];
+ try {
+  transport=await listenTransport({ledger,controllerToken,workers:[{id:'worker1',token,capacity:1,assignments:[assignment]}],
+    tls:certs.server,advertisedHost:'localhost'});
+  assert.throws(()=>tlsRequester(transport.origin,{...certs.peer('worker'),serverPin:certs.pin('server')}),/mutual TLS/);
+  const controller=tlsRequester(transport.origin,{...certs.peer('controller'),serverPin:certs.pin('server')},{allowRemote:true});clients.push(controller);
+  await controller.call('/v1/jobs',controllerToken,{id:'named',...assignment});
+  const worker=tlsRequester(transport.origin,{...certs.peer('worker'),serverPin:certs.pin('server')},{allowRemote:true});clients.push(worker);
+  assert.equal((await worker.call('/v1/jobs/named',token)).job.id,'named');
+  await assert.rejects(worker.call('/v1/jobs/named',controllerToken),/403/);
+  const wrong=tlsRequester(transport.origin,{...certs.peer('worker'),serverPin:'0'.repeat(64)},{allowRemote:true});clients.push(wrong);
+  await assert.rejects(wrong.call('/v1/jobs/named',token),/pin mismatch/);
+ }finally{for(const client of clients)client.close();await transport?.close();ledger.close();rmSync(dir,{recursive:true,force:true});}
 });

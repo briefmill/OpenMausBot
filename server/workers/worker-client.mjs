@@ -2,6 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { runProviderTurn } from './provider-runner.mjs';
 import { tlsRequester } from './tls-request.mjs';
 import { workerEventForController } from './event-wire.mjs';
+import { validWorkerOrigin } from './transport-address.mjs';
 
 const safeId = value => {
   if (typeof value !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/.test(value)) throw Error('Invalid job identity');
@@ -10,12 +11,12 @@ const safeId = value => {
 // Internal runtime requests keep permission evidence. Durable progress events
 // carry only this display-safe subset, without raw protocol or shell arguments.
 
-export function workerClient({ origin, token, heartbeatMs = 1000, pollMs = 50, tls }) {
-  if (!/^https?:\/\/127\.0\.0\.1:\d+$/.test(origin)) throw Error('Loopback transport required');
+export function workerClient({ origin, token, heartbeatMs = 1000, pollMs = 50, tls, allowRemote=false }) {
+  if (!validWorkerOrigin(origin,allowRemote)) throw Error('Loopback transport required unless pinned remote TLS is enabled');
   if (origin.startsWith('https:') !== !!tls) throw Error('Explicit mutual TLS configuration required');
   if (typeof token !== 'string' || token.length < 32) throw Error('Worker credential required');
   if (!Number.isSafeInteger(pollMs) || pollMs < 1 || pollMs > 1000) throw Error('Invalid poll interval');
-  const secure = tls ? tlsRequester(origin, tls) : null;
+  const secure = tls ? tlsRequester(origin, tls, {allowRemote}) : null;
   const call = async (path, body, signal) => {
     if (secure) return secure.call(path, token, body, signal);
     const response = await fetch(origin + path, {
