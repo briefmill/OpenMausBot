@@ -30,13 +30,23 @@ export function workerClient({ origin, token, heartbeatMs = 1000, pollMs = 50, t
   };
   return {
     close: () => secure?.close(),
-    async run({ jobId, adapter, input, signal }) {
+    async run({ jobId, adapter, input, signal, lease: suppliedLease }) {
       safeId(jobId);
       const { job } = await call(`/v1/jobs/${jobId}`, undefined, signal);
       if (input.botId !== job.bot || input.threadId !== job.thread) throw Error('Provider input identity mismatch');
-      const { lease } = await call(`/v1/jobs/${jobId}/claim`, {}, signal);
+      let lease;
+      if (suppliedLease !== undefined) {
+        lease = structuredClone(suppliedLease);
+        if (!lease || lease.id !== jobId || lease.worker !== job.worker || lease.generation !== job.generation ||
+            job.state !== 'running' || typeof lease.token !== 'string' || !/^[a-f0-9]{64}$/.test(lease.token))
+          throw Error('Invalid controller-owned worker lease');
+      } else ({ lease } = await call(`/v1/jobs/${jobId}/claim`, {}, signal));
       const auth = { generation: lease.generation, token: lease.token };
-      let seq = 0;
+      await call(`/v1/jobs/${jobId}/heartbeat`, auth, signal);
+      const reserved = await call(`/v1/jobs/${jobId}/events`, { ...auth, seq:1,
+        event:{type:'worker.execution.claimed',jobId,generation:lease.generation} }, signal);
+      if (reserved.replay) throw Error('Worker execution already started; reconciliation required');
+      let seq = 1;
       const result = await runProviderTurn({ adapter, input, signal, heartbeatMs,
         onRequestOutcome: (event, outcome) => call(`/v1/jobs/${jobId}/requests/${safeId(event.requestId)}/ack`, { ...auth, outcome }, signal),
         checkLease: () => call(`/v1/jobs/${jobId}/heartbeat`, auth, signal),

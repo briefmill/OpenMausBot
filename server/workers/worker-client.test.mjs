@@ -69,3 +69,23 @@ test('provider permission travels over HTTP to controller before any action', as
     await transport.close(); ledger.close(); rmSync(dir, { recursive: true, force: true });
   }
 });
+test('controller-owned lease starts once and rejects forged or replayed execution',async()=>{
+  const ledger=new JobLedger(':memory:'),controllerToken=randomBytes(32).toString('hex'),token=randomBytes(32).toString('hex');
+  const assignment={bot:'bot',thread:'thread',project:'project',resource:'desktop'};
+  const transport=await listenTransport({ledger,controllerToken,workers:[{id:'worker',token,capacity:1,assignments:[assignment]}]});
+  let listener,starts=0;const adapter={capabilities:{engineAdmission:true},onEvent(fn){listener=fn;return()=>{listener=null;}},
+    async sendTurn(){starts++;setImmediate(()=>listener?.({eventId:'done',provider:'fixture',type:'turn.completed',threadId:'thread',turnId:'turn',ok:true}));return{turnId:'turn'};},async interruptTurn(){}};
+  const input={botId:'bot',threadId:'thread',text:'Synthetic',approvalMode:'ask',toolScope:{},mcpFromUserConfig:false,
+    engineAdmission:async()=>{},approvalModeNow:()=> 'ask'};
+  const client=workerClient({origin:transport.origin,token});
+  try{
+    ledger.enqueue({id:'job',...assignment});const lease=ledger.claim('job','worker',30000);
+    await assert.rejects(client.run({jobId:'job',adapter,input,lease:{...lease,token:'f'.repeat(64)},signal:AbortSignal.timeout(3000)}),/rejected/);
+    assert.equal(starts,0);
+    const first=await client.run({jobId:'job',adapter,input,lease,signal:AbortSignal.timeout(3000)});
+    assert.equal(first.result.ok,true);assert.equal(starts,1);assert.equal(ledger.get('job').generation,1);
+    await assert.rejects(client.run({jobId:'job',adapter,input,lease,signal:AbortSignal.timeout(3000)}),/already started/);
+    assert.equal(starts,1);
+    await assert.rejects(client.run({jobId:'job',adapter,input,lease:{...lease,id:'foreign'},signal:AbortSignal.timeout(3000)}),/controller-owned/);
+  }finally{client.close();await transport.close();ledger.close();}
+});
