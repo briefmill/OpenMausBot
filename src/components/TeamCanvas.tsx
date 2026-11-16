@@ -13,6 +13,7 @@ import { activityPreview, botEngine } from "@/lib/failed-turn";
 import { computerStepLine } from "@/lib/computer-step";
 import type { MapComputer, MapComputerState } from "../../shared/map-computer";
 import { BotAvatar } from "./Avatar";
+import { saveMapLayout, useSyncedMapLayout } from "@/lib/team-map-layout-sync";
 import { BrowserMapNode } from "./BrowserMapNode";
 import { ComputerNode } from "./ComputerNode";
 import { InstanceProviderMark, ProviderMark } from "./ProviderIcons";
@@ -130,6 +131,7 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
   const suppressClick = useRef(false);
   const keyboardFocus = useRef(false);
   const storageKey = useRef<string | null>(null);
+  const syncedLayout = useSyncedMapLayout();
   const [positions, setPositions] = useState<Record<string, Point>>({});
   const [botOrders, setBotOrders] = useState<Record<string, string[]>>({});
   const [view, setView] = useState<View>({ x: 40, y: 40, scale: 1 });
@@ -169,14 +171,23 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
       try {
         const saved = parsePositions(localStorage.getItem(storageKey.current));
         setPositions((previous) => ({ ...saved, ...previous }));
-        setBotOrders(parseBotOrders(localStorage.getItem(`${storageKey.current}:bot-order`)));
+        const savedOrders = parseBotOrders(localStorage.getItem(`${storageKey.current}:bot-order`));
+        setBotOrders(savedOrders);
+        if (Object.keys(saved).length || Object.keys(savedOrders).length) saveMapLayout({ positions: saved, botOrders: savedOrders }, true);
       } catch {}
     }).catch(() => {}).finally(() => { if (active) setLayoutLoaded(true); });
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    if (!syncedLayout || gesture.current) return;
+    setPositions(syncedLayout.positions);
+    setBotOrders(syncedLayout.botOrders);
+  }, [syncedLayout]);
+
   const savePositions = (next: Record<string, Point>) => {
     setPositions(next);
+    saveMapLayout({ positions: Object.fromEntries(Object.entries(next).filter(([key, point]) => positions[key]?.x !== point.x || positions[key]?.y !== point.y)) });
     if (!storageKey.current) return;
     try {
       localStorage.setItem(storageKey.current, JSON.stringify(Object.fromEntries(sections
@@ -190,6 +201,7 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
       ...orderBots(bot.chiefOfStaff ? section.members : section.chiefs, personalOrder(section.key)).map((item) => item.id),
     ] };
     setBotOrders(next);
+    saveMapLayout({ botOrders: { [section.key]: next[section.key] } });
     if (storageKey.current) {
       try { localStorage.setItem(`${storageKey.current}:bot-order`, JSON.stringify(next)); }
       catch {}

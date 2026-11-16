@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { StoreProvider, type Bot } from "../../src/state/store";
+import { useShowComputers } from "../../src/lib/map-computers";
 import { TeamCanvas } from "../../src/components/TeamCanvas";
 import { buildTeamMapSections } from "../../src/lib/team-map";
 import { applySkin } from "../../src/lib/skins";
@@ -10,7 +11,7 @@ applySkin(new URLSearchParams(location.search).get("skin") === "daylight" ? "day
 const payload = await fetch("/api/bots").then((response) => response.json());
 const bots: Bot[] = payload.bots.filter((bot: Bot) => bot.name.startsWith("Demo ")).map((bot: Bot) => ({ ...bot, busy: true }));
 function Fixture() {
-  const [show, setShow] = useState(true);
+  const { show, choose: setShow } = useShowComputers(true);
   const [opened, setOpened] = useState("");
   return <div className="flex h-dvh flex-col bg-panel text-ink">
     <header className="flex items-center justify-between border-b border-hairline px-6 py-4">

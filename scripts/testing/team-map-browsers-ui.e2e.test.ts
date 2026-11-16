@@ -79,11 +79,23 @@ const binary = process.env.OMB_MAP_TEST_AGENT_BROWSER;
     expect(await evaluate("document.querySelectorAll('[data-computer-node^=\"browser:\"]').length")).toBe(0);
     await agentBrowser(binary!, env, ["screenshot", join(evidence, "midnight-before.png")]);
     await agentBrowser(binary!, env, ["open", `${preview.previewUrl}?skin=daylight`]);
+    await expect.poll(() => evaluate("document.querySelector('header button').getAttribute('aria-pressed')")).toBe("false");
+    await evaluate("document.querySelector('header button').click()");
     await expect.poll(() => evaluate("document.querySelectorAll('[data-computer-node^=\"browser:\"] canvas:not(.invisible)').length"), { timeout: 20_000 }).toBe(2);
     await agentBrowser(binary!, env, ["screenshot", join(evidence, "daylight-after.png")]);
     await evaluate("document.querySelector('header button').click()");
     await expect.poll(() => stream.size, { timeout: 10_000 }).toBe(0);
     await agentBrowser(binary!, env, ["screenshot", join(evidence, "daylight-before.png")]);
+    await evaluate("document.querySelector('[data-arrange-team=Engineering]').focus()");
+    await agentBrowser(binary!, env, ["press", "Shift+ArrowRight"]);
+    await expect.poll(async () => (await api("GET", "/api/team-map/layout")).layout.positions.Engineering?.x).toBeTypeOf("number");
+    const expectedLeft = await evaluate("document.querySelector('[data-team-key=Engineering]').style.left");
+    const secondEnv = sessionEnv({ home: fixture.info.dataDir, session: "map-preview-second-device", chrome: CHROME! });
+    try {
+      await agentBrowser(binary!, secondEnv, ["open", preview.previewUrl]);
+      await expect.poll(async () => (await agentBrowser(binary!, secondEnv, ["eval", "document.querySelector('[data-team-key=Engineering]')?.style.left"])).result).toBe(expectedLeft);
+      await expect.poll(async () => (await agentBrowser(binary!, secondEnv, ["eval", "document.querySelector('header button')?.getAttribute('aria-pressed')"])).result).toBe("false");
+    } finally { await agentBrowser(binary!, secondEnv, ["close"]); }
     writeFileSync(join(evidence, "receipt.json"), JSON.stringify({ synthetic: true, liveBrowserPreviews: connections, hiddenStreams: stream.size, selectedBot: ids[0], screenshot: "live-browser-previews.png" }, null, 2));
   } finally {
     await agentBrowser(binary!, env, ["close"]).catch(() => {});
