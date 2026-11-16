@@ -4,6 +4,38 @@ import { createWorkerCoordinator } from './coordinator.mjs';
 const assignments=['a','b'].map(worker=>({bot:'bot-'+worker,project:'project',pool:'pool',worker,
   desktop:'desktop-'+worker,workspace:'workspace-'+worker}));
 const pools={pool:{models:{default:'synthetic',options:[{id:'synthetic',label:'Synthetic'}]}}};
+
+test('controller terminal waits for verified host shutdown',async()=>{
+  let release,stopping;const gate=new Promise(resolve=>release=resolve),atStop=new Promise(resolve=>stopping=resolve);
+  const events=[];
+  const c=createWorkerCoordinator({file:':memory:',assignments,pools,signal:AbortSignal.timeout(5000),
+    resolveTurn:(bot,thread)=>({bot,thread,requestId:'request',active:true}),
+    host:{admit:async()=>{},health:async()=>true,launch:async()=>({}),
+      execute:async({job,turnId,emit})=>{
+        emit({type:'turn.completed',eventId:'provider-done',threadId:job.thread,turnId,ok:true});return{ok:true};
+      },stop:async()=>{stopping();await gate;},inspectStopped:async()=>true}});
+  try {
+    const adapter=await c.bootstrap.createAdapter({instanceId:'worker',pool:'pool'});adapter.onEvent(e=>events.push(e));
+    await adapter.sendTurn({botId:'bot-a',threadId:'thread',text:'Synthetic',approvalMode:'ask',mcpFromUserConfig:false,toolScope:{}});
+    await atStop;assert.equal(events.filter(e=>e.type==='turn.completed').length,0);
+    release();await c.drain();assert.equal(events.filter(e=>e.type==='turn.completed').length,1);assert.equal(events[0].ok,true);
+  }finally{release();c.close();}
+});
+
+test('uncertain host shutdown never publishes provider success',async()=>{
+  const events=[];
+  const c=createWorkerCoordinator({file:':memory:',assignments,pools,signal:AbortSignal.timeout(5000),
+    resolveTurn:(bot,thread)=>({bot,thread,requestId:'request',active:true}),
+    host:{admit:async()=>{},health:async()=>true,launch:async()=>({}),
+      execute:async({job,turnId,emit})=>{emit({type:'turn.completed',eventId:'done',threadId:job.thread,turnId,ok:true});return{ok:true};},
+      stop:async()=>{},inspectStopped:async()=>false}});
+  try {
+    const adapter=await c.bootstrap.createAdapter({instanceId:'worker',pool:'pool'});adapter.onEvent(e=>events.push(e));
+    await adapter.sendTurn({botId:'bot-a',threadId:'thread',text:'Synthetic',approvalMode:'ask',mcpFromUserConfig:false,toolScope:{}});
+    const results=await c.drain();assert.equal(results[0].value.settled,false);assert.equal(events.length,0);
+    assert.throws(()=>c.close(),/settlement/);
+  }finally{c.ledger.close();}
+});
 test('coordinator joins scoped planning, concurrent turns, permissions and host settlement',async()=>{
   let active=0,peak=0,release;const gate=new Promise(resolve=>release=resolve),stopped=new Set(),answers=[];
   const c=createWorkerCoordinator({file:':memory:',assignments,pools,signal:AbortSignal.timeout(5000),

@@ -36,6 +36,11 @@ export function createWorkerCoordinator({ file, assignments, resolveTurn, pools,
       return host.execute({ job, lease, handle, input:context.input, turnId:context.turnId, signal, heartbeat,
         emit:event => {
           if (event.threadId !== job.thread || event.turnId !== context.turnId || contexts.get(job.id) !== context) return;
+          if (event.type === 'turn.completed' || event.type === 'cap.exhausted') {
+            if (context.terminal) throw Error('Conflicting worker terminal');
+            context.terminal = structuredClone(event); return;
+          }
+          if (context.terminal) throw Error('Worker event after terminal');
           if (event.type === 'request.opened') {
             const { raw, ...request } = event;
             const existing = ledger.pendingRequests(job.id).find(row => row.requestId === request.requestId);
@@ -65,7 +70,16 @@ export function createWorkerCoordinator({ file, assignments, resolveTurn, pools,
           contexts.set(plan.job.id,context);
           const completion = new Promise(resolve => setImmediate(resolve)).then(() => dispatcher.dispatch(plan.job.id,plan.worker));
           context.completion = completion;
-          completion.then(result => { if (result.settled && contexts.get(plan.job.id) === context) contexts.delete(plan.job.id); }).catch(() => {});
+          completion.then(result => {
+            if (result.settled && contexts.get(plan.job.id) === context) {
+              const terminal = context.terminal;
+              context.emit(terminal ? {...terminal,ok:result.outcome === 'completed' && terminal.ok === true} : {
+                provider:'isolatedWorker',threadId:input.threadId,turnId:context.turnId,eventId:'settled-'+plan.job.id,
+                type:'turn.completed',ok:false,stopReason:result.outcome === 'cancelled' ? 'cancelled' : 'worker-execution-failed',
+              });
+              contexts.delete(plan.job.id);
+            }
+          }).catch(() => {});
           return { turnId:context.turnId, completion };
         },
         answer:({threadId,turnId,requestId,decision}) => {
