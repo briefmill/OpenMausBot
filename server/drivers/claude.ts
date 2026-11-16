@@ -1084,6 +1084,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       }
       const cwd = turn.cwd ?? homedir(), toolSearch = claudeToolSearchSetting(cwd, turnEnvironment);
       // Pre-allowed, or the CLI's own ListAgents look-alike shadows it.
+      if (turn.integrations?.controllerTools) {
+        mcpServers.worker_apps = { ...turn.integrations.controllerTools };
+        allowed.push("mcp__worker_apps");
+      }
       if (turn.integrations?.agents) {
         mcpServers.agents = claudeAgentsMount(turn.integrations.agents, toolSearch);
         allowed.push("mcp__agents");

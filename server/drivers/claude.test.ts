@@ -500,6 +500,19 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(existsSync(dump)).toBe(false);
   });
 
+  it("preapproves the controller-gated worker relay while retaining native restrictions", async () => {
+    const dump = join(scratch, "worker-controller-relay.json"); process.env.FAKE_CLAUDE_DUMP = dump;
+    await create("echo", {}, { tools: ["Read"], disallowedTools: ["Bash"] });
+    await instance.adapter.sendTurn({ threadId: "worker-controller-relay", text: "Fixture", approvalMode: "ask", mcpFromUserConfig: false,
+      toolScope: { allow: ["native:*", "mcp:worker_apps:*"] },
+      integrations: { controllerTools: { command: process.execPath, args: ["synthetic-worker-relay"], env: {} } } });
+    await recorder.until(event => event.type === "turn.completed");
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.mcpConfig.mcpServers).toHaveProperty("worker_apps");
+    expect(seen.argv[seen.argv.indexOf("--allowedTools") + 1].split(",")).toContain("mcp__worker_apps");
+    expect(seen.argv[seen.argv.indexOf("--disallowedTools") + 1]).toContain("Bash");
+  });
+
   it("gates every eligible MCP mount while preserving guest and instance restrictions", async () => {
     const dump = join(scratch, "scope-mcp.json"); process.env.FAKE_CLAUDE_DUMP = dump;
     await create("echo", { FAKE_CLAUDE_VERSION: "2.1.284" }, { tools: ["Read"], disallowedTools: ["Write"] });

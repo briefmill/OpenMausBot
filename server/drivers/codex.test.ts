@@ -1281,6 +1281,21 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     expect(seen.env.OMB_COMMS_TOKEN).toBe("peer-comms-secret");
   });
 
+  it("preapproves the controller-gated worker relay while keeping custom tools prompted", async () => {
+    await create({ environment: { FAKE_CODEX_MCP_OVERRIDES: "1" } });
+    const dump = join(scratch, "worker-controller-relay.json"); process.env.FAKE_CODEX_DUMP = dump;
+    const bridge = { command: process.execPath, args: ["synthetic-worker-relay"], env: { WORKER_TOKEN: "synthetic-worker-token" } };
+    await instance.adapter.sendTurn({ threadId: "worker-controller-relay", text: "Fixture", approvalMode: "ask", mcpFromUserConfig: false,
+      toolScope: { allow: ["native:*", "mcp:worker_apps:*", "mcp:notes:*"] },
+      integrations: { controllerTools: bridge, custom: { notes: bridge } } });
+    await recorder.until(event => event.type === "turn.completed");
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    const overrides = seen.argv.filter((value: string) => value.startsWith("mcp_servers.worker_apps.default_tools_approval_mode="));
+    expect(overrides).toEqual(['mcp_servers.worker_apps.default_tools_approval_mode="approve"']);
+    expect(seen.argv).toContain('mcp_servers.notes.default_tools_approval_mode="prompt"');
+    expect(seen.argv.join(" ")).not.toContain("synthetic-worker-token");
+  });
+
   it("mounts custom MCP servers on-request while built-ins stay pre-quieted", async () => {
     await create();
     const dump = join(scratch, "custom-mcp.json");

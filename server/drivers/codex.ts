@@ -595,6 +595,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         };
         if (turn.integrations?.composio) mountSelected("composio", "openmausbot_connectors", turn.integrations.composio);
         if (turn.integrations?.composioOwn) mountSelected(OWN_APPS_SERVER, `openmausbot_${OWN_APPS_SERVER}`, turn.integrations.composioOwn);
+        if (turn.integrations?.controllerTools) mountSelected("worker_apps", "worker_apps", turn.integrations.controllerTools, "approve");
         if (turn.integrations?.agents) {
           // OpenMausBot's own coordination tools never ask: "auto" quiets only read-only tools.
           mountSelected("agents", "agents", turn.integrations.agents, "approve"); if (selectedMcp.has("agents")) appServerArgs.push("-c", `mcp_servers.agents.tool_timeout_sec=${AGENTS_TOOL_TIMEOUT_SECONDS}`);

@@ -184,6 +184,8 @@ export interface SendTurnInput {
     };
     /** Loopback URL and turn-scoped bearer for the engine's hook helper; hooks observe and inject context, never decide state. */
     hooks?: { url: string; token: string };
+    /** Worker-only relay with controller-side account scope and approvals. Never supplied by job content. */
+    controllerTools?: { command: string; args: string[]; env: Record<string, string> };
     /** Peer-agent MCP proxy (list_bots / coordinate_bots); the harness owns turns, permissions and recursion limits. */
     agents?: { command: string; args: string[]; env: Record<string, string> };
     /** Physical Android phone tools over authorized USB debugging. */

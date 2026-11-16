@@ -6,7 +6,7 @@ test('native tool binding adds only the fixed relay alias while preserving nativ
   const bound=withNativeWorkerTools({input,controller:{origin:'https://controller'},task});
   assert.deepEqual(bound.toolScope,{allow:['native:Read','mcp:worker_apps:*'],deny:['native:Bash']});
   assert.deepEqual(input.toolScope.allow,['native:Read']);
-  const proxy=bound.integrations.custom.worker_apps;
+  const proxy=bound.integrations.controllerTools;
   assert.equal(proxy.command,process.execPath);assert.ok(proxy.args[0].endsWith('worker-tool-proxy.mjs'));
   assert.equal(JSON.parse(proxy.env.OMB_WORKER_TOOL_TOKEN_BINDING).jobId,'job');
   assert.equal(JSON.stringify(proxy.args).includes('own-lease'),false);
