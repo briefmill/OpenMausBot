@@ -92,7 +92,7 @@ export function createWorkerCoordinator({ file, assignments, resolveTurn, pools,
     health:options => !signal.aborted && host.health(options),
     async createAdapter({ instanceId, pool }) {
       if (adapters.has(instanceId)) throw Error('Worker instance requires explicit disposal before replacement');
-      const adapter = createWorkerAdapter({ provider:'isolatedWorker', capabilities:{ engineAdmission:true, ...(openTools ? {customMcp:true,composioMcp:true} : {}) },
+      const adapter = createWorkerAdapter({ provider:'isolatedWorker', capabilities:{ engineAdmission:true, ...(openTools ? {customMcp:true,composioMcp:true,agentsMcp:true} : {}) },
         submit:async (input,emit) => {
           if (signal.aborted || (input.engineAdmission !== undefined && typeof input.engineAdmission !== 'function')) throw Error('Worker admission unavailable');
           const plan = planner.plan(input);

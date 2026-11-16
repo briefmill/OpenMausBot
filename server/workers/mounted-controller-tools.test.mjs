@@ -70,3 +70,24 @@ test('mounted worker tools preserve separate synthetic account environments and 
     rmSync(directory,{recursive:true,force:true});
   }
 });
+
+test('worker agents relay keeps controller-owned tool scope and canonical identity',{timeout:15000},async()=>{
+ const root=mkdtempSync(join(tmpdir(),'omb-worker-agents-')),script=join(root,'agents.mjs');
+ writeFileSync(script,`import {createInterface} from 'node:readline';
+ const send=(id,result)=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',id,result})+'\\n');
+ createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);
+ if(m.method==='initialize')send(m.id,{protocolVersion:'2024-11-05',capabilities:{tools:{}},serverInfo:{name:'agents',version:'1'}});
+ if(m.method==='tools/list')send(m.id,{tools:['list_bots','send_message'].map(name=>({name,inputSchema:{type:'object',properties:{},additionalProperties:false}}))});
+ if(m.method==='tools/call')send(m.id,{content:[{type:'text',text:'controller-bound:'+process.env.FIXTURE_OWNER}]});
+ });`);
+ const signal=AbortSignal.timeout(10000);let session;
+ try{
+  session=await openAccountScopedWorkerTools({input:{botId:'bot',threadId:'thread',approvalMode:'ask',mcpFromUserConfig:false,
+   toolScope:{deny:['mcp:agents:send_message']},integrations:{agents:{command:process.execPath,args:[script],env:{FIXTURE_OWNER:'bot/thread'}}}},
+   job:identity,turnId:'turn',signal,isCurrent:()=>true,emit:event=>{if(event.type==='request.opened'){assert.equal(event.tool,'mcp__agents__list_bots');session.respondToRequest('thread',event.requestId,{behavior:'allow'});}}});
+  const definitions=session.definitions();assert.ok(definitions.some(x=>x.function?.name==='agents_list_bots'));assert.ok(!definitions.some(x=>x.function?.name==='agents_send_message'));
+  const call={id:'agents-call',tool:'agents_list_bots',arguments:{}};
+  assert.equal(await session.authorize({job:identity,call,signal}),true);
+  const result=await session.dispatch({job:identity,call,signal});assert.equal(result.ok,true);assert.ok(result.text.includes('controller-bound:bot/thread'));
+ }finally{await session?.close();rmSync(root,{recursive:true,force:true});}
+});
