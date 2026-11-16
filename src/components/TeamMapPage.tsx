@@ -20,6 +20,9 @@ import { TeamDialog } from "./TeamDialog";
 import { TeamMemoryDialog } from "./TeamMemoryDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { intlLocale, t } from "@/lib/i18n";
+import { builtInBrowserEnabled } from "@/lib/feature-flags";
+import { writeComputerPanelView } from "@/lib/computer-panel-view";
+import { rememberComputerPanelOpen } from "@/lib/computer-panel-focus";
 import { CanvasComputers } from "./CanvasComputers";
 import { useMapComputers, useShowComputers } from "@/lib/map-computers";
 import { MapComposer } from "./MapComposer";
@@ -294,7 +297,8 @@ export function TeamMapPage() {
     return buildTeamMapSections(bots, names).sort((a, b) => order(a.key) - order(b.key));
   }, [bots, state.sections, state.groups]);
   const edges = useMemo(() => buildTeamMapEdges(bots, snapshot), [bots, snapshot]);
-  const anyComputer = bots.some((bot) => bot.computer === "cloud" && bot.cloudBackend !== "vps") || computers.some((computer) => computer.section !== null);
+  const browserPreviewsAvailable = builtInBrowserEnabled(state.config) && state.config?.browserEngine?.engine === "chrome";
+  const anyComputer = browserPreviewsAvailable && bots.some((bot) => bot.browser !== false && bot.busy) || bots.some((bot) => bot.computer === "cloud" && bot.cloudBackend !== "vps") || computers.some((computer) => computer.section !== null);
   const { show: showComputers, loaded: computersChoiceLoaded, choose: setShowComputers } = useShowComputers(anyComputer);
   const mapComputers = useMapComputers(!remoteClient && computersChoiceLoaded && showComputers);
   const [taggedBotIds, setTaggedBotIds] = useState<string[]>([]);
@@ -393,6 +397,12 @@ export function TeamMapPage() {
         connectedBotIds={state.settingsOpen ? edges.flatMap((edge) => edge.sourceBotId === state.selectedId ? [edge.targetBotId] : edge.targetBotId === state.selectedId ? [edge.sourceBotId] : []) : []}
         onComputer={(bot) => openBotSettings(dispatch, "access", { botId: bot.id })}
         computers={showComputers && computersChoiceLoaded && !remoteClient ? mapComputers.computers : undefined} computerFrames={mapComputers.frames}
+        showBrowsers={showComputers && computersChoiceLoaded && !remoteClient && browserPreviewsAvailable}
+        onOpenBrowser={(bot) => {
+          writeComputerPanelView(bot.id, "browser");
+          rememberComputerPanelOpen({ botId: bot.id, opener: document.activeElement instanceof HTMLElement ? document.activeElement : null, tabs: true, browser: true });
+          dispatch({ type: "toggleComputer", open: true, botId: bot.id });
+        }}
         onOpenComputer={(computer) => computer.kind === "team" ? setComputersOpen(true) : dispatch({ type: "toggleComputer", open: true, botId: computer.id })}
         teamComputers={Object.fromEntries(computers.filter((computer) => computer.section !== null).map((computer) => [computer.section!, { name: computer.name, state: computer.state }]))}
         onTeamComputer={() => setComputersOpen(true)}

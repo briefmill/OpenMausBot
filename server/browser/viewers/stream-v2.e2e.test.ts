@@ -236,6 +236,28 @@ suite("the v2 stream on real Chrome", () => {
     await panel.close();
   }, hostTimeout(90_000));
 
+  it("shows an existing browser as a passive map preview without resizing or accepting input", async () => {
+    await opened("/map-preview", ANIMATED);
+    const before = await pageSize();
+    const preview = await connect("maxWidth=512&maxHeight=320&existingOnly=true&width=200&height=100");
+    await until(() => preview.frames.length, (count) => count >= 3);
+    expect(preview.frames.every((frame) => frame.width <= 512 && frame.height <= 320)).toBe(true);
+    expect(await pageSize()).toEqual(before);
+    expect(await preview.next("control")).toMatchObject({ canOperate: false });
+    preview.send({ type: "takeControl" });
+    preview.send({ type: "navigate", url: fx.page("/must-not-open", STILL) });
+    await sleep(500);
+    expect(await real.peek(target, "document.title")).toBe("animated");
+    expect(real.service.heldBy(target.session)).toBeNull();
+    await preview.close();
+    const profiles = real.service.profiles().length;
+    target = { session: "map-absent", key: "bot:map-absent" };
+    const absent = await connect("maxWidth=512&maxHeight=320&existingOnly=true");
+    await until(() => absent.socket.readyState, (state) => state === WebSocket.CLOSED);
+    expect(absent.frames).toHaveLength(0);
+    expect(real.service.profiles()).toHaveLength(profiles);
+  }, hostTimeout(90_000));
+
   it("sends the page's file picker to the person holding the browser, and their files to the page", async () => {
     await opened("/form", FORM);
     const client = await connect("width=1280&height=800&maxWidth=2560&maxHeight=1600");

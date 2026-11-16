@@ -7,12 +7,14 @@ import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { teamMapStatus, type TeamMapSection } from "@/lib/team-map";
 import { COMPUTER_DRAG_TYPE, fitTeams, layoutTeams, orderBots, parseBotOrders, parsePositions, reorderBot, teamSize, zoomAt, type Point, type View } from "@/lib/team-canvas";
-import { bestColumns, polylinePath, teamGeometry, type TeamGeometry } from "@/lib/team-canvas-computers";
+import { polylinePath, teamGeometry, type TeamGeometry } from "@/lib/team-canvas-computers";
 import { teamComputersFor, type ShownFrame } from "@/lib/map-computers";
 import { activityPreview, botEngine } from "@/lib/failed-turn";
 import { computerStepLine } from "@/lib/computer-step";
 import type { MapComputer, MapComputerState } from "../../shared/map-computer";
 import { BotAvatar } from "./Avatar";
+import { saveMapLayout, useSyncedMapLayout } from "@/lib/team-map-layout-sync";
+import { BrowserMapNode } from "./BrowserMapNode";
 import { ComputerNode } from "./ComputerNode";
 import { InstanceProviderMark, ProviderMark } from "./ProviderIcons";
 import { openBotSettings } from "./bot-panel/panel-link";
@@ -96,7 +98,7 @@ function currentActivity(bot: Bot | undefined, instances: ReturnType<typeof useS
   return bot.tasks?.find((task) => task.busy && task.threadId !== bot.threadId && task.title.trim())?.title;
 }
 
-export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemory, onEditTeam, onDeleteTeam, onComputer, onComputerDrop, onTeamComputer, teamComputers = {}, connectedBotIds = [], computers = NO_COMPUTERS, computerFrames = {}, onOpenComputer, taggedBotIds = [], sent, bottomInset = 0 }: {
+export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemory, onEditTeam, onDeleteTeam, onComputer, onComputerDrop, onTeamComputer, teamComputers = {}, connectedBotIds = [], computers = NO_COMPUTERS, showBrowsers = false, onOpenBrowser, computerFrames = {}, onOpenComputer, taggedBotIds = [], sent, bottomInset = 0 }: {
   sections: TeamMapSection<Bot>[];
   canManage: boolean;
   onMove: (bot: Bot, destination: string) => Promise<boolean | void>;
@@ -112,6 +114,8 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
   connectedBotIds?: string[];
   /** Computers drawn beside their bots; empty hides them and keeps the usual layout. */
   computers?: MapComputer[];
+  showBrowsers?: boolean;
+  onOpenBrowser?: (bot: Bot) => void;
   computerFrames?: Record<string, ShownFrame>;
   onOpenComputer?: (computer: MapComputer) => void;
   /** Bots a message being typed on the map will go to. */
@@ -127,6 +131,7 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
   const suppressClick = useRef(false);
   const keyboardFocus = useRef(false);
   const storageKey = useRef<string | null>(null);
+  const syncedLayout = useSyncedMapLayout();
   const [positions, setPositions] = useState<Record<string, Point>>({});
   const [botOrders, setBotOrders] = useState<Record<string, string[]>>({});
   const [view, setView] = useState<View>({ x: 40, y: 40, scale: 1 });
@@ -138,20 +143,20 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
   const [announcement, setAnnouncement] = useState("");
   const [layoutLoaded, setLayoutLoaded] = useState(false);
   const [menuAbove, setMenuAbove] = useState<string | null>(null);
-  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const geometries = useMemo<Array<TeamGeometry | null>>(() => sections.map((section) => {
-    if (!computers.length) return null;
+    if (!computers.length && !showBrowsers) return null;
     const order = Object.hasOwn(botOrders, section.key) ? botOrders[section.key] : [];
     const chiefs = orderBots(section.chiefs, order), members = orderBots(section.members, order);
-    return teamGeometry({ chiefs, members }, teamComputersFor(section.key, [...chiefs, ...members].map((bot) => bot.id), computers));
-  }), [sections, computers, botOrders]);
+    const devices = teamComputersFor(section.key, [...chiefs, ...members].map((bot) => bot.id), computers);
+    return teamGeometry({ chiefs, members }, { ...devices, browsers: showBrowsers
+      ? new Map([...chiefs, ...members].filter((bot) => bot.browser !== false).map((bot) => [bot.id, `browser:${bot.id}`])) : undefined });
+  }), [sections, computers, botOrders, showBrowsers]);
   const columnsFor = useMemo(() => {
     if (!geometries.some(Boolean)) return undefined;
     const sizes = geometries.map((geometry, index) => geometry ?? teamSize(sections[index]));
-    // Rounded so a small window resize never reshuffles the teams.
-    return { sizes, columns: bestColumns(sizes, { width: Math.round(viewportSize.width / 200) * 200, height: Math.round(viewportSize.height / 200) * 200 }) };
-  }, [geometries, sections, viewportSize]);
-  const tiles = useMemo(() => layoutTeams(sections, positions, columnsFor), [sections, positions, columnsFor]);
+    return { sizes, columns: 2, avoidOverlap: true };
+  }, [geometries, sections]);
+  const tiles = useMemo(() => layoutTeams(sections, positions, { ...columnsFor, avoidOverlap: true }), [sections, positions, columnsFor]);
   const current = useRef({ view, positions, tiles, selectedId: state.selectedId, settingsOpen: state.settingsOpen, bottomInset });
   current.current = { view, positions, tiles, selectedId: state.selectedId, settingsOpen: state.settingsOpen, bottomInset };
 
@@ -164,14 +169,23 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
       try {
         const saved = parsePositions(localStorage.getItem(storageKey.current));
         setPositions((previous) => ({ ...saved, ...previous }));
-        setBotOrders(parseBotOrders(localStorage.getItem(`${storageKey.current}:bot-order`)));
+        const savedOrders = parseBotOrders(localStorage.getItem(`${storageKey.current}:bot-order`));
+        setBotOrders(savedOrders);
+        if (Object.keys(saved).length || Object.keys(savedOrders).length) saveMapLayout({ positions: saved, botOrders: savedOrders }, true);
       } catch {}
     }).catch(() => {}).finally(() => { if (active) setLayoutLoaded(true); });
     return () => { active = false; };
   }, []);
 
-  const savePositions = (next: Record<string, Point>) => {
+  useEffect(() => {
+    if (!syncedLayout || gesture.current) return;
+    setPositions(syncedLayout.positions);
+    setBotOrders(syncedLayout.botOrders);
+  }, [syncedLayout]);
+
+  const savePositions = (next: Record<string, Point>, changedKey: string) => {
     setPositions(next);
+    saveMapLayout({ positions: { [changedKey]: next[changedKey] } });
     if (!storageKey.current) return;
     try {
       localStorage.setItem(storageKey.current, JSON.stringify(Object.fromEntries(sections
@@ -185,6 +199,7 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
       ...orderBots(bot.chiefOfStaff ? section.members : section.chiefs, personalOrder(section.key)).map((item) => item.id),
     ] };
     setBotOrders(next);
+    saveMapLayout({ botOrders: { [section.key]: next[section.key] } });
     if (storageKey.current) {
       try { localStorage.setItem(`${storageKey.current}:bot-order`, JSON.stringify(next)); }
       catch {}
@@ -207,7 +222,6 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
     let previousSize: { width: number; height: number } | null = null;
     const observer = new ResizeObserver(() => {
       const bounds = element.getBoundingClientRect();
-      setViewportSize({ width: bounds.width, height: bounds.height });
       if (!previousSize) fit();
       else {
         const card = current.current.settingsOpen ? [...element.querySelectorAll<HTMLElement>("[data-bot-id]")]
@@ -318,7 +332,7 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
     if (active.kind === "team" && event) savePositions({ ...active.positions, [active.key]: {
       x: active.origin.x + (event.clientX - active.start.x) / active.view.scale,
       y: active.origin.y + (event.clientY - active.start.y) / active.view.scale,
-    } });
+    } }, active.key);
     if (active.kind === "bot" && event) {
       const destination = destinationAt(event.clientX, event.clientY);
       if (destination === null) return;
@@ -431,7 +445,7 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
                 if (!delta) return;
                 event.preventDefault(); event.stopPropagation();
                 const step = event.shiftKey ? 40 : 10;
-                savePositions({ ...positions, [section.key]: { x: tile.x + delta[0] * step, y: tile.y + delta[1] * step } });
+                savePositions({ ...positions, [section.key]: { x: tile.x + delta[0] * step, y: tile.y + delta[1] * step } }, section.key);
               }}>
               <h2 className="truncate text-[13px] font-semibold tracking-tight">{section.name}</h2>
             </button>
@@ -478,6 +492,11 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
               return bot ? <div key={bot.id} className="absolute" style={{ left: card.x, top: card.y }}>{renderBot(bot)}</div> : null;
             })}
             {geometry.monitors.map((monitor) => {
+              if (monitor.id.startsWith("browser:")) {
+                const bot = botById.get(monitor.id.slice(8));
+                return bot ? <BrowserMapNode key={monitor.id} bot={bot} x={monitor.x} y={monitor.y}
+                  onOpen={onOpenBrowser ? () => onOpenBrowser(bot) : undefined} /> : null;
+              }
               const computer = computerById.get(monitor.id);
               if (!computer) return null;
               const users = computer.botIds.flatMap((id) => botById.get(id) ?? []);

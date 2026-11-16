@@ -117,3 +117,22 @@ describe("personal bot arrangement", () => {
     expect(parseBotOrders(JSON.stringify(orders))).toEqual(orders);
   });
 });
+
+
+describe("expanded team map layout", () => {
+  it("separates departments whose saved positions overlap after browser monitors expand them", () => {
+    const sections = ["General", "BVS", "Briefmill", "Proxie", "Inner Clip", "Personal"].map((key) => section(key, 0, 3));
+    const positions = Object.fromEntries(sections.map(({ key }, index) => [key, { x: 40 + index * 30, y: 40 + index * 20 }]));
+    const sizes = sections.map((_, index) => ({ width: 650 + index * 50, height: 700 + index * 150 }));
+    const tiles = layoutTeams(sections, positions, { sizes, columns: 2, avoidOverlap: true });
+    for (let i = 0; i < tiles.length; i++) for (let j = i + 1; j < tiles.length; j++) {
+      const a = tiles[i], b = tiles[j];
+      expect(a.x + a.width + 32 <= b.x || b.x + b.width + 32 <= a.x || a.y + a.height + 32 <= b.y || b.y + b.height + 32 <= a.y).toBe(true);
+    }
+    expect(positions.BVS).toEqual({ x: 70, y: 60 });
+    expect(layoutTeams(sections, positions, { sizes, columns: 2, avoidOverlap: true })).toEqual(tiles);
+  });
+  it("keeps a saved department at its exact position when there is room", () => {
+    expect(layoutTeams([section("BVS"), section("Briefmill")], { BVS: { x: -400, y: 800 }, Briefmill: { x: 1200, y: -300 } }, { avoidOverlap: true }).map(({x,y}) => ({x,y}))).toEqual([{x:-400,y:800},{x:1200,y:-300}]);
+  });
+});

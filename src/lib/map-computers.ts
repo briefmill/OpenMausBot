@@ -1,3 +1,4 @@
+import { saveMapLayout, useSyncedMapLayout } from "./team-map-layout-sync";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/state/store";
 import { listenLiveFrames } from "@/lib/live-events";
@@ -143,6 +144,7 @@ export function useMapComputers(enabled: boolean) {
 /** "Show computers", remembered per workspace like the canvas layout; until chosen, on whenever there is a computer to
  * show. `loaded` turns true once the saved choice has been read, so a hidden map never starts watching on load. */
 export function useShowComputers(defaultOn: boolean): { show: boolean; loaded: boolean; choose: (on: boolean) => void } {
+  const syncedLayout = useSyncedMapLayout();
   const [key, setKey] = useState<string | null>(null);
   const [chosen, setChosen] = useState<boolean | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -159,7 +161,9 @@ export function useShowComputers(defaultOn: boolean): { show: boolean; loaded: b
     }).catch(() => {}).finally(() => { if (active) setLoaded(true); });
     return () => { active = false; };
   }, []);
+  useEffect(() => { if (syncedLayout?.showScreens !== undefined) setChosen(syncedLayout.showScreens); }, [syncedLayout]);
   const choose = useCallback((on: boolean) => {
+    saveMapLayout({ showScreens: on });
     setChosen(on);
     if (!key) return;
     try { localStorage.setItem(key, on ? "on" : "off"); } catch {}
