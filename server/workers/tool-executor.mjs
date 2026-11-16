@@ -74,6 +74,10 @@ export function createDurableToolExecutor({ledger,authorize,dispatch}){
       }catch{
         const row=get(lease,call.id);
         if(row?.owner===owner && ['pending','dispatching'].includes(row.state))transition(row.state,dispatched?'uncertain':'denied',dispatched?undefined:{ok:false,text:'Tool authorization interrupted; no upstream operation dispatched.'});
+        if(dispatched && get(lease,call.id)?.state==='uncertain') {
+          const job=ledger.get(lease.id);
+          if(job.generation===lease.generation && job.state==='running')ledger.cancel(lease.id);
+        }
         throw Error(dispatched?'Tool outcome requires reconciliation; do not repeat the action':'Tool authorization interrupted; no upstream operation dispatched');
       }
     },

@@ -30,8 +30,11 @@ test('an unknown upstream outcome remains held across controller executor replac
   const options={ledger,authorize:async()=>true,dispatch:async()=>{calls++;throw Error('private upstream detail');}};
   try{
     await assert.rejects(execute(createDurableToolExecutor(options),lease),error=>!error.message.includes('private')&&/reconciliation/.test(error.message));
-    await assert.rejects(execute(createDurableToolExecutor(options),lease),/Unfinished/);assert.equal(calls,1);
-    assert.equal(createDurableToolExecutor(options).inspect({lease,callId:call.id}).state,'uncertain');
+    await assert.rejects(execute(createDurableToolExecutor(options),lease),/cancelled|Unfinished/);assert.equal(calls,1);
+    assert.equal(ledger.get(lease.id).state,'cancelling');
+    assert.equal(ledger.db.prepare('SELECT state FROM worker_tool_calls').get().state,'uncertain');
+    await assert.rejects(execute(createDurableToolExecutor(options),lease,{...call,id:'another-id'}),/cancelled/);
+    assert.equal(calls,1);
   }finally{ledger.close();}
 });
 test('in-flight replay cannot start a second upstream operation',async()=>{

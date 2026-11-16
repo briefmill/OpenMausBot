@@ -27,6 +27,7 @@ export async function openAccountScopedWorkerTools(args) {
     signal.throwIfAborted();if(!isCurrent())throw Error('Worker tool mount no longer current');
     const preview=value=>toolDetailPreview(JSON.parse(JSON.stringify(value,(_key,part)=>typeof part==='string'?scrub(part):part)));
     return createControllerToolSession({...args,session:{...tools,
+      definitions:JSON.parse(JSON.stringify(tools.definitions,(_key,part)=>typeof part==='string'?scrub(part):part)),
       execute:async(...callArgs)=>{
         const result=await tools.execute(...callArgs);
         return {...result,text:scrub(result.text)};

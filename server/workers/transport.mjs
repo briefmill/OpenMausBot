@@ -67,7 +67,7 @@ export async function listenTransport({ ledger, controllerToken, workers, leaseM
       if (!match || !principal) throw denied(401, 'Unauthorized');
       if (tls && (!req.socket.authorized || !req.socket.getPeerCertificate().raw ||
           digest(req.socket.getPeerCertificate().raw).toString('hex') !== principal.certificatePin)) throw denied(403, 'Forbidden');
-      const route = /^\/v1\/jobs(?:\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})(?:\/(claim|heartbeat|events|finish|cancel|requests|artifacts|tools|tool-result)(?:\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})\/(decision|poll|ack|result))?)?)?$/.exec(req.url);
+      const route = /^\/v1\/jobs(?:\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})(?:\/(claim|heartbeat|events|finish|cancel|requests|artifacts|tools|tool-result|tool-catalog)(?:\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})\/(decision|poll|ack|result))?)?)?$/.exec(req.url);
       if (!route) throw denied(404, 'Not found');
       const [, id, action, requestId, requestAction] = route;
       if (requestId && action !== 'requests') throw denied(404, 'Not found');
@@ -121,9 +121,14 @@ export async function listenTransport({ ledger, controllerToken, workers, leaseM
         return send(lease ? 200 : 409, lease ? { lease } : { error: 'Capacity or resource unavailable' });
       }
       const lease = { id, worker: principal.id, generation: body.generation, token: body.token };
-      if(action==='tools' || action==='tool-result'){
+      if(action==='tools' || action==='tool-result' || action==='tool-catalog'){
         if(!tools)throw denied(503,'Worker tool relay unavailable');
         ledger.owned(lease);
+        if(action==='tool-catalog'){
+          exact(body,['generation','token']);
+          if(typeof tools.list!=='function')throw denied(503,'Worker tool catalog unavailable');
+          return send(200,{definitions:await tools.list({lease})});
+        }
         if(action==='tool-result'){
           exact(body,['generation','token','callId']);
           return send(200,{invocation:tools.inspect({lease,callId:body.callId})});

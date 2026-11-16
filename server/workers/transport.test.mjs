@@ -194,3 +194,23 @@ test('tool execution stays unavailable without a trusted controller relay',async
   const response=await f.call('/v1/jobs/no-relay/tools',f.worker,{generation:lease.generation,token:lease.token,
     call:{id:'read',tool:'read',arguments:{}}});assert.equal(response.status,503);
 });
+
+
+test('tool discovery requires the assigned worker and current secret lease',async t=>{
+  const definition={type:'function',function:{name:'account_read',description:'Synthetic read',parameters:{type:'object'}}};
+  let lists=0;
+  const f=await setup(t,{toolsFactory:ledger=>({...createDurableToolExecutor({ledger,authorize:async()=>false,dispatch:async()=>({ok:false})}),
+    list:({lease})=>{const job=ledger.owned(lease);if(job.state!=='running')throw Error('inactive');lists++;return[definition];}})});
+  await f.call('/v1/jobs',f.controller,{id:'catalog',...assignment});
+  const lease=(await f.call('/v1/jobs/catalog/claim',f.worker,{})).body.lease;
+  const client=workerClient({origin:f.origin,token:f.worker});t.after(()=>client.close());
+  const auth={generation:lease.generation,token:lease.token};
+  assert.deepEqual((await client.toolCatalog({jobId:'catalog',lease,signal:AbortSignal.timeout(2000)})).definitions,[definition]);
+  assert.equal((await f.call('/v1/jobs/catalog/tool-catalog',f.other,auth)).status,403);
+  assert.equal((await f.call('/v1/jobs/catalog/tool-catalog',f.controller,auth)).status,403);
+  assert.equal((await f.call('/v1/jobs/catalog/tool-catalog',f.worker,{...auth,token:'0'.repeat(64)})).status,409);
+  assert.equal((await f.call('/v1/jobs/catalog/tool-catalog',f.worker,{...auth,bot:'foreign'})).status,400);
+  await f.call('/v1/jobs/catalog/cancel',f.controller,{});
+  await assert.rejects(client.toolCatalog({jobId:'catalog',lease,signal:AbortSignal.timeout(2000)}));
+  assert.equal(lists,1);
+});

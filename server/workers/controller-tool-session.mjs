@@ -21,6 +21,12 @@ export function createControllerToolSession({job,turnId,session,signal,isCurrent
     session,approval,mode,preview,signal,isCurrent});
   let closed=false;
   return {
+    definitions() {
+      signal.throwIfAborted();if(closed || !isCurrent())throw Error('Tool catalog unavailable');
+      const definitions=structuredClone(session.definitions ?? []);
+      if(Buffer.byteLength(JSON.stringify(definitions))>1024*1024)throw Error('Tool catalog exceeds delivery budget');
+      return definitions;
+    },
     authorize:args=>policy.authorize(args),dispatch:args=>policy.dispatch(args),
     hasRequest:id=>!closed && requests.has(id),
     respondToRequest(thread,id,decision) {

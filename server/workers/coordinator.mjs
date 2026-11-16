@@ -19,8 +19,13 @@ export function createWorkerCoordinator({ file, assignments, resolveTurn, pools,
       throw Error('Controller tool session unavailable');
     return context.tools;
   };
-  const tools = openTools ? createDurableToolExecutor({ledger,
-    authorize:args=>sessionFor(args.job).authorize(args),dispatch:args=>sessionFor(args.job).dispatch(args)}) : undefined;
+  const tools = openTools ? {...createDurableToolExecutor({ledger,
+    authorize:args=>sessionFor(args.job).authorize(args),dispatch:args=>sessionFor(args.job).dispatch(args)}),
+    list({lease}) {
+      const owned=ledger.owned(lease),session=sessionFor(ledger.get(owned.id));
+      if(typeof session.definitions!=='function')throw Error('Tool catalog unavailable');
+      return session.definitions();
+    }} : undefined;
   const dispatcher = createDispatcher({ ledger, waitForCapacity:true, signal,
     onQueued:job => {
       const context=contexts.get(job.id);

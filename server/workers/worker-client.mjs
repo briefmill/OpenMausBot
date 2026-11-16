@@ -37,6 +37,10 @@ export function workerClient({ origin, token, heartbeatMs = 1000, pollMs = 50, t
         return toolSecure?await toolSecure.call(path,token,body,signal):await call(path,body,signal);
       }catch{throw Error('Tool delivery unresolved; inspect the same invocation ID before retrying. Do not repeat with a new ID.');}
     },
+    async toolCatalog({jobId,lease,signal}){
+      safeId(jobId);if(lease?.id!==jobId)throw Error('Foreign tool job');
+      return call(`/v1/jobs/${jobId}/tool-catalog`,{generation:lease.generation,token:lease.token},signal);
+    },
     async toolResult({jobId,lease,callId,signal}){
       safeId(jobId);safeId(callId);if(lease?.id!==jobId)throw Error('Foreign tool job');
       return call(`/v1/jobs/${jobId}/tool-result`,{generation:lease.generation,token:lease.token,callId},signal);
