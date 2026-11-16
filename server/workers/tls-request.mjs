@@ -1,14 +1,26 @@
 import { Agent, request } from 'node:https';
+import { checkServerIdentity } from 'node:tls';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 // The host and port are fixed by trusted bootstrap. Redirects and caller-supplied
 // TLS verification overrides are not supported.
 export function tlsRequester(origin, tls) {
   if (!/^https:\/\/127\.0\.0\.1:\d+$/.test(origin) || !tls ||
-      Object.keys(tls).sort().join(',') !== 'ca,cert,key' ||
+      Object.keys(tls).sort().join(',') !== 'ca,cert,key,serverPin' ||
+      typeof tls.serverPin !== 'string' || !/^[a-f0-9]{64}$/.test(tls.serverPin) ||
       ![tls.key, tls.cert, tls.ca].every(v => (typeof v === 'string' || Buffer.isBuffer(v)) && v.length))
     throw Error('Pinned mutual TLS transport required');
+  const expectedPin = Buffer.from(tls.serverPin,'hex');
   const agent = new Agent({ key: tls.key, cert: tls.cert, ca: tls.ca,
-    rejectUnauthorized: true, minVersion: 'TLSv1.3', keepAlive: true, maxSockets: 4 });
+    rejectUnauthorized: true, minVersion: 'TLSv1.3', keepAlive: true, maxSockets: 4,
+    checkServerIdentity(host, certificate) {
+      const identityError = checkServerIdentity(host,certificate);
+      if (identityError) return identityError;
+      if (!certificate.raw || !timingSafeEqual(createHash('sha256').update(certificate.raw).digest(),expectedPin)) {
+        return Error('Worker server certificate pin mismatch');
+      }
+    },
+  });
   return {
     close: () => agent.destroy(),
     async call(path, token, body, signal) {

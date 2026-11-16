@@ -20,3 +20,5 @@ Remaining integration: reviewed controller bootstrap, remote host transport, per
 Coordinator checks cover fast permission acknowledgement followed by immediate job completion. The controller reads persisted acknowledgement before retiring its turn. Server typecheck and 67 focused tests pass. Remote host callbacks and app startup registration remain unimplemented.
 
 Source-backed isolated HTTP run 9c4de33af556 passes eight bot messages, approval cards, overlapping desktop tasks and retained outputs using this coordinator and typed driver. The test host supplies synthetic admission and scripted work; real remote capacity and provider execution remain unverified.
+
+Mutual-TLS clients require a SHA-256 server leaf-certificate pin in addition to CA and hostname verification. The transport rejects wrong or missing pins and does not accept caller TLS verification overrides. The 13 transport/client/TLS checks pass after this change. Remote routing remains loopback or an explicitly managed tunnel; no deployment credentials have been created.

@@ -28,10 +28,12 @@ test('mutual TLS binds the controller and worker certificates to their bearer ro
  const dir=mkdtempSync(join(tmpdir(),'maus-mtls-'));let transport;const clients=[];const ledger=new JobLedger(join(dir,'jobs.db'));const certs=certificates(dir);
  try{
   transport=await listenTransport({ledger,controllerToken,workers:[{id:'worker1',token,capacity:1,assignments:[assignment]}],tls:certs.server});
-  const client=name=>{const c=tlsRequester(transport.origin,certs.peer(name));clients.push(c);return c};
+  const client=name=>{const c=tlsRequester(transport.origin,{...certs.peer(name),serverPin:certs.pin('server')});clients.push(c);return c};
   const controller=client('controller'),worker=client('worker'),outsider=client('outsider');
   await controller.call('/v1/jobs',controllerToken,{id:'one',...assignment});
   const claimed=await worker.call('/v1/jobs/one/claim',token,{});assert.equal(claimed.lease.worker,'worker1');
+  const wrongServer=tlsRequester(transport.origin,{...certs.peer('worker'),serverPin:'0'.repeat(64)});clients.push(wrongServer);
+  await assert.rejects(wrongServer.call('/v1/jobs/one',token),/certificate pin mismatch/);
   await assert.rejects(worker.call('/v1/jobs/one',controllerToken),/403/);
   await assert.rejects(controller.call('/v1/jobs/one',token),/403/);
   await assert.rejects(outsider.call('/v1/jobs/one',token),/403/);
@@ -44,7 +46,7 @@ test('mutual TLS binds the controller and worker certificates to their bearer ro
   ledger.finish(claimed.lease,'cancelled',{bytes:0,sha256:'0'.repeat(64)});
   await controller.call('/v1/jobs',controllerToken,{id:'two',...assignment});
   let listener;const adapter={capabilities:{engineAdmission:true},onEvent(fn){listener=fn;return()=>{listener=null}},async sendTurn(input){await input.engineAdmission('process');setTimeout(()=>listener?.({eventId:'done',type:'turn.completed',provider:'fixture',threadId:'t',turnId:'fixture-turn',ok:true}),5);return{turnId:'fixture-turn'}},async interruptTurn(){}};
-  const runner=workerClient({origin:transport.origin,token,tls:certs.peer('worker'),heartbeatMs:20});clients.push(runner);
+  const runner=workerClient({origin:transport.origin,token,tls:{...certs.peer('worker'),serverPin:certs.pin('server')},heartbeatMs:20});clients.push(runner);
   const result=await runner.run({jobId:'two',adapter,signal:AbortSignal.timeout(3000),input:{botId:'b',threadId:'t',text:'synthetic',approvalMode:'ask',toolScope:{},mcpFromUserConfig:false,engineAdmission:async()=>{},approvalModeNow:()=> 'ask'}});assert.equal(result.result.ok,true);assert.equal(result.lease.worker,'worker1');
   for(const c of clients)c.close();await transport.close();transport=null;
   await assert.rejects(listenTransport({ledger,controllerToken,workers:[{id:'worker1',token,capacity:1,assignments:[assignment]}],tls:{...certs.server,workerPins:{worker1:certs.pin('outsider')}}}),/reconciliation/);
@@ -55,4 +57,5 @@ test('worker client refuses remote cleartext and TLS verification overrides befo
  assert.throws(()=>workerClient({origin:'https://127.0.0.1:443',token}),/Explicit/);
  assert.throws(()=>workerClient({origin:'http://127.0.0.1:443',token,tls:{}}),/Explicit/);
  assert.throws(()=>tlsRequester('https://127.0.0.1:443',{ca:'x',key:'x',cert:'x',rejectUnauthorized:false}),/mutual TLS/);
+ assert.throws(()=>tlsRequester('https://127.0.0.1:443',{ca:'x',key:'x',cert:'x'}),/mutual TLS/);
 });
