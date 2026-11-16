@@ -15,7 +15,7 @@ Evidence lives in C:\Users\lL0xt\OneDrive\Documents\ManusBot\worker-execution-ca
 ## Software gates before hosted acceptance
 
 - The identified customized checkout overlay is integrated and tested as af003d478. Its original checkout stays untouched. Review any separate feature worktrees and deployed desktop differences before promotion; the production package version is still unverified.
-- Finish built-in connected-app saved grants and full Codex tool-result acceptance. Configured custom MCP read grants already pass source/packaged new-chat and restart tests; separate synthetic sends still require approval.
+- Finish built-in connected-app saved-grant acceptance. Configured custom MCP read grants pass source/packaged new-chat and restart tests; separate synthetic sends still require approval. Both real native driver launch/result paths pass with synthetic CLIs, but live model authentication and provider rate limits still need approved hosted acceptance.
 - Qualify the pinned worker image with the chosen provider CLI and isolated authentication. The package manifest still reports productionReady false. No production credential copy or paid model turn follows from local tests.
 - Offline encrypted snapshot restore passes for a stopped synthetic journal, including wrong-password/tamper refusal and old-generation rejection. Finish the trusted stopped-state/locking wrapper, post-snapshot reconciliation, interrupted restore and actual Railway volume acceptance before treating recovery as operational. See RECOVERY.md.
 - Include root-controller MCP process/memory pressure in load acceptance. Moving models off the controller does not remove its integration-process load.

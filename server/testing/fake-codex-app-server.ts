@@ -236,7 +236,7 @@ const resolvedSandbox = (params: Record<string, unknown>) => {
   return { type: "readOnly" };
 };
 
-type McpStartup = { status: "ready"; tools: string[] } | { status: "failed"; error: string };
+type McpStartup = { status: "ready"; tools: string[]; toolResult?: unknown } | { status: "failed"; error: string };
 let mcpStartup: Record<string, McpStartup> | undefined;
 /** codex-cli 0.160.1's initialize for every server it connects. */
 const CODEX_MCP_HANDSHAKE = { protocolVersion: "2025-06-18", capabilities: { elicitation: { form: {}, url: {} } }, clientInfo: { name: "codex-mcp-client", title: "Codex", version: "0.160.1" } };
@@ -254,7 +254,7 @@ const mcpMounts = (): Record<string, Record<string, unknown>> => {
   return mounts;
 };
 const mcpError = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 500);
-const startStdioMcp = (mount: Record<string, unknown>, handshake: unknown): Promise<McpStartup> => new Promise((resolve) => {
+const startStdioMcp = (mount: Record<string, unknown>, handshake: unknown, call?: { name: string; input: Record<string, unknown> }): Promise<McpStartup> => new Promise((resolve) => {
   const env: Record<string, string> = {};
   for (const name of ["PATH", "HOME"]) if (process.env[name]) env[name] = process.env[name]!;
   for (const name of (mount.env_vars ?? []) as string[]) if (process.env[name] !== undefined) env[name] = process.env[name]!;
@@ -274,7 +274,13 @@ const startStdioMcp = (mount: Record<string, unknown>, handshake: unknown): Prom
       try { frame = JSON.parse(line); } catch { continue; }
       if (frame.error) return done({ status: "failed", error: mcpError(frame.error.message) });
       if (frame.id === 1) { write({ method: "notifications/initialized" }); write({ id: 2, method: "tools/list", params: {} }); }
-      if (frame.id === 2) return done({ status: "ready", tools: (frame.result?.tools ?? []).map((tool: { name: string }) => tool.name) });
+      if (frame.id === 2) {
+        const tools = (frame.result?.tools ?? []).map((tool: { name: string }) => tool.name);
+        if (!call) return done({ status: "ready", tools });
+        if (!tools.includes(call.name)) return done({ status: "failed", error: "requested fixture tool was not advertised" });
+        write({ id: 3, method: "tools/call", params: { name: call.name, arguments: call.input } });
+      }
+      if (frame.id === 3 && call) return done({ status: "ready", tools: [call.name], toolResult: frame.result });
     }
   });
   write({ id: 1, method: "initialize", params: handshake });
@@ -718,6 +724,20 @@ process.stdin.on("data", (chunk) => {
         dump();
         logStartup("turn/start");
         nativeThreadId = msg.params?.threadId ?? nativeThreadId;
+        if (process.env.FAKE_CODEX_MCP_CALL) {
+          const call = JSON.parse(process.env.FAKE_CODEX_MCP_CALL) as { server: string; name: string; input: Record<string, unknown> };
+          const mount = mcpMounts()[call.server];
+          out({ jsonrpc: "2.0", id: msg.id, result: { turn: { id: nativeTurnId } } });
+          notify("item/started", { item: { id: "fixture-mcp", type: "mcpToolCall", server: call.server, tool: call.name, status: "inProgress", arguments: call.input } });
+          void startStdioMcp(mount ?? {}, CODEX_MCP_HANDSHAKE, call).then(reply => {
+            const result = reply.status === "ready" ? reply.toolResult : undefined;
+            const ok = result !== undefined && !(result as { isError?: boolean }).isError;
+            notify("item/completed", { item: { id: "fixture-mcp", type: "mcpToolCall", server: call.server, tool: call.name,
+              status: ok ? "completed" : "failed", result, ...(reply.status === "failed" ? { error: { message: reply.error } } : {}) } });
+            notify("turn/completed", { turn: { id: nativeTurnId, status: ok ? "completed" : "failed" } });
+          });
+          break;
+        }
         if (mode === "early-tool-timeout" || mode === "early-tool-error") {
           if (process.env.FAKE_CODEX_ACTION_LOG) appendFileSync(process.env.FAKE_CODEX_ACTION_LOG, `${JSON.stringify({ action: "record", pid: process.pid })}\n`);
           notify("item/completed", { item: { id: "early-tool", type: "commandExecution", command: "record", status: "completed", aggregatedOutput: "recorded" } });

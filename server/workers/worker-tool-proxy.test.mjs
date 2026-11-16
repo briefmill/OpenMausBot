@@ -5,7 +5,7 @@ import {execFileSync,spawn} from 'node:child_process';import {createHash,X509Cer
 import {JobLedger} from './ledger.mjs';import {listenTransport} from './transport.mjs';
 import {createDurableToolExecutor} from './tool-executor.mjs';import {ChatMcpClient} from '../drivers/chat-mcp-tools.ts';
 
-test('spawned native MCP proxy uses pinned TLS and the own-job durable tool journal',{timeout:30000},async()=>{
+test('Claude and Codex drivers use the pinned worker relay and own-job durable tool journal',{timeout:30000},async()=>{
   const directory=mkdtempSync(join(tmpdir(),'omb-native-tool-')),ledger=new JobLedger(':memory:');
   let transport,proxy,executions=0;
   const file=name=>join(directory,name),read=name=>readFileSync(file(name));
@@ -37,17 +37,22 @@ test('spawned native MCP proxy uses pinned TLS and the own-job durable tool jour
     assert.equal(result.isError,false);assert.equal(result.content[0].text,'synthetic account report');assert.equal(executions,1);
     assert.equal(ledger.db.prepare('SELECT state FROM worker_tool_calls').get().state,'completed');
     const driverScript=file('driver.mjs'),fixtureConfig=file('driver.json');
-    writeFileSync(fixtureConfig,JSON.stringify({controller:binding.controller,task:{jobId:'job',lease}}));
+    for(const nativeDriver of ['claude','codex']) {
+    writeFileSync(fixtureConfig,JSON.stringify({driver:nativeDriver,controller:binding.controller,task:{jobId:'job',lease}}));
     const moduleUrl=name=>pathToFileURL(fileURLToPath(new URL(name,import.meta.url))).href;
     writeFileSync(driverScript,`import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
       import {ClaudeDriver} from ${JSON.stringify(moduleUrl('../drivers/claude.ts'))};
+      import {CodexDriver} from ${JSON.stringify(moduleUrl('../drivers/codex.ts'))};
       import {ensureDirs} from ${JSON.stringify(moduleUrl('../config.ts'))};
       import {withNativeWorkerTools} from ${JSON.stringify(moduleUrl('./native-tool-input.mjs'))};
       const config=JSON.parse(readFileSync(process.argv[2],'utf8'));ensureDirs();
-      const instance=await ClaudeDriver.create({instanceId:'synthetic-native-tools',enabled:true,
-        config:{cli:${JSON.stringify(fileURLToPath(new URL('../testing/fake-claude-cli.ts',import.meta.url)))},permissionMode:'acceptEdits'},
+      const driver=config.driver==='codex'?CodexDriver:ClaudeDriver;
+      const instance=await driver.create({instanceId:'synthetic-native-tools',enabled:true,
+        config:config.driver==='codex'?{cli:${JSON.stringify(fileURLToPath(new URL('../testing/fake-codex-app-server.ts',import.meta.url)))},fullAuto:false}:
+          {cli:${JSON.stringify(fileURLToPath(new URL('../testing/fake-claude-cli.ts',import.meta.url)))},permissionMode:'acceptEdits'},
         environment:{HOME:${JSON.stringify(directory)},FAKE_CLAUDE_TOOL_CALLS:JSON.stringify([{server:'worker_apps',name:'account_read',input:{}}]),
-          FAKE_CLAUDE_MODE:'happy',OMB_CLAUDE_SESSION_IDLE_MS:'1000'}});
+          FAKE_CLAUDE_MODE:'happy',OMB_CLAUDE_SESSION_IDLE_MS:'1000',CODEX_HOME:${JSON.stringify(file('isolated-codex-home'))},
+          FAKE_CODEX_MCP_OVERRIDES:'1',FAKE_CODEX_MCP_CALL:JSON.stringify({server:'worker_apps',name:'account_read',input:{}})}});
       const events=[];let done;const terminal=new Promise(resolve=>{done=resolve;});
       instance.adapter.onEvent(event=>{events.push(event);if(event.type==='turn.completed')done(event);});
       try {
@@ -55,9 +60,9 @@ test('spawned native MCP proxy uses pinned TLS and the own-job durable tool jour
           approvalMode:'ask',mcpFromUserConfig:false,toolScope:{allow:['native:*']}},controller:config.controller,task:config.task});
         await instance.adapter.sendTurn({...input,engineAdmission:async()=>{},approvalModeNow:()=> 'ask'});
         const result=await Promise.race([terminal,new Promise((_,reject)=>setTimeout(()=>reject(Error('Native fixture deadline')),10000).unref())]);
-        assert.equal(result.ok,true);
+        assert.equal(result.ok,true,JSON.stringify({driver:config.driver,errors:events.filter(event=>event.type==='runtime.error').map(event=>event.message),stopReason:result.stopReason}));
         assert.ok(events.some(event=>event.type==='item.completed' && JSON.stringify(event).includes('synthetic account report')));
-        console.log(JSON.stringify({realClaudeDriver:true,syntheticCLI:true,toolResultObserved:true}));
+        console.log(JSON.stringify({realDriver:config.driver,syntheticCLI:true,toolResultObserved:true}));
       }finally{await instance.dispose();}
     `);
     const child=spawn(process.execPath,[driverScript,fixtureConfig],{windowsHide:true,env:{PATH:process.env.PATH,
@@ -65,10 +70,12 @@ test('spawned native MCP proxy uses pinned TLS and the own-job durable tool jour
     let stdout='',stderr='';child.stdout.on('data',chunk=>{stdout+=chunk;});child.stderr.on('data',chunk=>{stderr+=chunk;});
     const exit=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{child.kill();reject(Error('Driver child deadline'));},20000);
       child.once('error',error=>{clearTimeout(timer);reject(error);});child.once('close',code=>{clearTimeout(timer);resolve(code);});});
-    assert.equal(exit,0,stderr.slice(-1500));assert.ok(stdout.includes('"toolResultObserved":true'));assert.equal(executions,2);
+    assert.equal(exit,0,stderr.slice(-1500));assert.ok(stdout.includes('"toolResultObserved":true'));assert.equal(executions,nativeDriver==='claude'?2:3);
+    }
+    assert.equal(ledger.db.prepare("SELECT count(*) AS n FROM worker_tool_calls WHERE state='completed'").get().n,3);
     ledger.cancel('job');
     const cancelled=await proxy.call('tools/call',{name:'account_read',arguments:{}},signal,5000).catch(error=>error);
-    assert.ok(cancelled instanceof Error);assert.equal(executions,2);
+    assert.ok(cancelled instanceof Error);assert.equal(executions,3);
   }finally{
     await proxy?.close();await transport?.close();ledger.close();
     if(dirname(resolve(directory))!==resolve(tmpdir()))throw Error('Unexpected fixture path');
