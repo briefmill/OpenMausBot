@@ -20,18 +20,20 @@ test('separate worker process runs authenticated provider work with a private re
     const lease=ledger.claim('job','worker',30000),bootstrapFile=join(home,'bootstrap.mjs');
     writeFileSync(bootstrapFile,`
       import {workerClient} from ${JSON.stringify(new URL('./worker-client.mjs',import.meta.url).href)};
-      import {createBoundWorkerRuntime} from ${JSON.stringify(new URL('./worker-runtime.mjs',import.meta.url).href)};
-      export async function bootstrap(){
+      import {createProviderBootstrap} from ${JSON.stringify(new URL('./provider-bootstrap.mjs',import.meta.url).href)};
+      export async function bootstrap({signal}){
         const client=workerClient({origin:${JSON.stringify(transport.origin)},token:${JSON.stringify(token)}});let listener;
-        const adapter={capabilities:{engineAdmission:true},onEvent(fn){listener=fn;return()=>{listener=null;}},
+        const adapter={provider:'synthetic',capabilities:{engineAdmission:true},onEvent(fn){listener=fn;return()=>{listener=null;}},
           async sendTurn(input){await input.engineAdmission('process');setImmediate(()=>{
             listener({eventId:'reply',type:'item.completed',itemType:'assistant_text',text:'Child process report',threadId:'thread',turnId:'child-turn'});
             listener({eventId:'done',type:'turn.completed',ok:true,threadId:'thread',turnId:'child-turn'});
           });return{turnId:'child-turn'};},async interruptTurn(){}};
-        return{runtime:createBoundWorkerRuntime({client,adapter,
+        const driver={driverKind:'synthetic',decodeConfig:value=>value,create:async args=>({
+          instanceId:args.instanceId,driverKind:'synthetic',adapter,dispose:async()=>{}})};
+        return createProviderBootstrap({client,driver,instance:{instanceId:'synthetic',enabled:true,environment:{},config:{}},
           binding:{jobId:'job',worker:'worker',generation:1,botId:'bot',threadId:'thread'},
           input:{botId:'bot',threadId:'thread',cwd:${JSON.stringify(home)},approvalMode:'ask',mcpFromUserConfig:false,
-            toolScope:{},engineAdmission:async()=>{},approvalModeNow:()=> 'ask'}}),close:async()=>client.close()};
+            toolScope:{},engineAdmission:async()=>{},approvalModeNow:()=> 'ask'}})({signal});
       }
     `);
     child=spawn(process.execPath,[fileURLToPath(new URL('./worker-process.mjs',import.meta.url)),bootstrapFile,'5000'],{
