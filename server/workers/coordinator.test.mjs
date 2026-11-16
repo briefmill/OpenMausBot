@@ -15,7 +15,8 @@ test('controller terminal waits for verified host shutdown',async()=>{
         emit({type:'turn.completed',eventId:'provider-done',threadId:job.thread,turnId,ok:true});return{ok:true};
       },stop:async()=>{stopping();await gate;},inspectStopped:async()=>true}});
   try {
-    const adapter=await c.bootstrap.createAdapter({instanceId:'worker',pool:'pool'});adapter.onEvent(e=>events.push(e));
+    const adapter=await c.bootstrap.createAdapter({instanceId:'worker',pool:'pool'});
+    assert.equal(adapter.capabilities.customMcp,undefined);assert.equal(adapter.capabilities.composioMcp,undefined);adapter.onEvent(e=>events.push(e));
     await adapter.sendTurn({botId:'bot-a',threadId:'thread',text:'Synthetic',approvalMode:'ask',mcpFromUserConfig:false,toolScope:{}});
     await atStop;assert.equal(events.filter(e=>e.type==='turn.completed').length,0);
     release();await c.drain();assert.equal(events.filter(e=>e.type==='turn.completed').length,1);assert.equal(events[0].ok,true);
@@ -160,6 +161,7 @@ test('two controller-mounted accounts wait for independent approvals and run con
       },stop:async()=>{},inspectStopped:async()=>true}});
   try{
     const adapter=await c.bootstrap.createAdapter({instanceId:'workers',pool:'pool'});
+    assert.equal(adapter.capabilities.customMcp,true);assert.equal(adapter.capabilities.composioMcp,true);
     adapter.onEvent(event=>{if(event.type==='request.opened'){cards.push(event);if(cards.length===2)both();}});
     await Promise.all(['a','b'].map(id=>adapter.sendTurn({botId:'bot-'+id,threadId:'thread-'+id,text:'Synthetic',approvalMode:'ask',mcpFromUserConfig:false,toolScope:{}})));
     await ready;assert.equal(reports.length,0);
