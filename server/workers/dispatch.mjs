@@ -48,7 +48,8 @@ export function createDispatcher({ ledger, launch, execute, stop, inspectStopped
       // Expired leases deliberately fail here. Restart recovery requires the
       // existing explicit reconciliation path rather than silent reassignment.
       const current = ledger.get(id);
-      const outcome = current.state === 'cancelling' ? 'cancelled' : failure ? 'failed' : 'completed';
+      const providerFailed = result?.ok === false || result?.result?.ok === false;
+      const outcome = current.state === 'cancelling' ? 'cancelled' : failure || providerFailed ? 'failed' : 'completed';
       const artifact = ledger.putArtifact(lease, Buffer.from(JSON.stringify({
         result: failure ? null : result ?? null, error: failure ? 'Worker execution failed' : null,
         workerStopped: true,

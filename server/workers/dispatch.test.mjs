@@ -3,6 +3,22 @@ import assert from 'node:assert/strict';
 import { JobLedger } from './ledger.mjs';
 import { createDispatcher } from './dispatch.mjs';
 const job = (id, resource = 'desktop:a') => ({ id, bot: 'bot', thread: id, project: 'project', resource });
+test('provider failure stays failed after verified shutdown and releases the desktop', async () => {
+  for (const result of [{ok:false}, {result:{ok:false}}]) {
+    const ledger = new JobLedger(':memory:');
+    try {
+      ledger.enqueue(job('a')); ledger.enqueue(job('b'));
+      let stopped = false;
+      const dispatcher = createDispatcher({ledger, launch:async()=>({}), execute:async()=>result,
+        stop:async()=>{stopped=true;}, inspectStopped:async()=>stopped});
+      const settled = await dispatcher.dispatch('a','worker-a');
+      assert.equal(settled.outcome,'failed'); assert.equal(settled.settled,true);
+      assert.equal(ledger.get('a').state,'failed');
+      assert.ok(ledger.claim('b','worker-b',1000));
+    } finally { ledger.close(); }
+  }
+});
+
 test('resource remains exclusive until authoritative host stop', async () => {
   const ledger = new JobLedger(':memory:');
   try {
