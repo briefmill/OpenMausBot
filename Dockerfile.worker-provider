@@ -1,0 +1,11 @@
+FROM docker.io/library/node@sha256:0e2646ab57e77b7a384a0cb59b6815b182c77e1f9c3ba36bd8435bd9c4e6680e
+RUN apt-get update && apt-get install -y --no-install-recommends tini=0.19.0-1+b3 util-linux=2.38.1-5+deb12u3 procps=2:4.0.2-3 ca-certificates git && rm -rf /var/lib/apt/lists/*
+ENV DISABLE_AUTOUPDATER=1
+RUN HOME=/tmp/omb-build-home npm install -g @anthropic-ai/claude-code@2.1.326 @openai/codex@0.169.0 \
+ && claude --version && codex --version \
+ && rm -rf /tmp/omb-build-home /root/.npm \
+ && chmod -R go-w /usr/local
+RUN mkdir /tmp/omb-cli-check && chown 1000:1000 /tmp/omb-cli-check \
+ && setpriv --reuid=1000 --regid=1000 --clear-groups --bounding-set=-all --no-new-privs env HOME=/tmp/omb-cli-check claude --version \
+ && setpriv --reuid=1000 --regid=1000 --clear-groups --bounding-set=-all --no-new-privs env HOME=/tmp/omb-cli-check codex --version \
+ && rm -rf /tmp/omb-cli-check
