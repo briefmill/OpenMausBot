@@ -522,6 +522,47 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(JSON.parse(readFileSync(dump, "utf8")).argv).toContain("--add-dir");
   });
 
+  it("bounds built-in connected-app results and keeps their original bridge and identity", async () => {
+    const dump = join(scratch, "bounded-connected-apps.json"); process.env.FAKE_CLAUDE_DUMP = dump;
+    await create();
+    const bridge = { command: "node", args: ["fixture-composio"], env: { FIXTURE_TOKEN: "not-a-real-secret" } };
+    await instance.adapter.sendTurn({ threadId: "bounded-connected-apps", text: "Fixture", integrations: { composio: bridge, composioOwn: bridge } });
+    await recorder.until((event) => event.type === "turn.completed");
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    for (const name of ["composio", "own_apps"]) {
+      const mounted = seen.mcpConfig.mcpServers[name];
+      expect(mounted.args[0]).toContain("mcp-gate");
+      expect(mounted.env.OMB_GATE_NAME).toBe(name);
+      expect(mounted.env.OMB_GATE_BUDGET).toBe("8000");
+      expect(JSON.parse(mounted.env.OMB_GATE_UPSTREAM)).toEqual(bridge);
+      expect(mounted.args.join(" ")).not.toContain("not-a-real-secret");
+      expect(seen.argv[seen.argv.indexOf("--allowedTools") + 1]).toContain(`mcp__${name}__query_result`);
+    }
+  });
+
+  it("keeps connected-app tool selections on the result gate", async () => {
+    const dump = join(scratch, "bounded-connected-scope.json"); process.env.FAKE_CLAUDE_DUMP = dump;
+    await create();
+    const scope = { allow: ["native:*", "mcp:composio:gmail_search_emails"] };
+    await instance.adapter.sendTurn({ threadId: "bounded-connected-scope", text: "Fixture", toolScope: scope, integrations: {
+      composio: { command: "node", args: ["fixture-composio"], env: {} }, composioOwn: { command: "node", args: ["fixture-own-apps"], env: {} },
+    } });
+    await recorder.until((event) => event.type === "turn.completed");
+    const mounted = JSON.parse(readFileSync(dump, "utf8")).mcpConfig.mcpServers;
+    expect(JSON.parse(mounted.composio.env.OMB_GATE_TOOL_SCOPE)).toEqual(scope);
+    expect(mounted.composio.env.OMB_GATE_BUDGET).toBe("8000");
+    expect(mounted).not.toHaveProperty("own_apps");
+  });
+
+  it("keeps an explicit zero result budget on built-in connections", async () => {
+    const dump = join(scratch, "unbounded-connected-apps.json"); process.env.FAKE_CLAUDE_DUMP = dump;
+    await create("echo", { OMB_MCP_RESULT_BUDGET: "0" });
+    const bridge = { command: "node", args: ["fixture-composio"], env: {} };
+    await instance.adapter.sendTurn({ threadId: "unbounded-connected-apps", text: "Fixture", integrations: { composio: bridge } });
+    await recorder.until((event) => event.type === "turn.completed");
+    expect(JSON.parse(readFileSync(dump, "utf8")).mcpConfig.mcpServers.composio).toEqual(bridge);
+  });
+
   it("refuses native MCP inheritance when a bot has an explicit selection", async () => {
     const dump = join(scratch, "scope-inherited-mcp.json"); process.env.FAKE_CLAUDE_DUMP = dump;
     await create();
