@@ -1,7 +1,7 @@
 import {createWorkerCoordinator} from './coordinator.mjs';
 import {createRemoteExecution} from './remote-execution.mjs';
 
-export function createServiceWorkerCoordinator({file,assignments,resolveTurn,pools,clients,admit,health,signal,onStopped=()=>{}}) {
+export function createServiceWorkerCoordinator({file,assignments,resolveTurn,pools,clients,admit,health,signal,openTools,onStopped=()=>{}}) {
   if(!Array.isArray(assignments) || typeof admit!=='function' || typeof health!=='function' || typeof onStopped!=='function')
     throw Error('Trusted service worker host required');
   const approved=structuredClone(assignments),catalog=new Map();
@@ -24,7 +24,7 @@ export function createServiceWorkerCoordinator({file,assignments,resolveTurn,poo
     return selected(job);
   };
   let relay;
-  const coordinator=createWorkerCoordinator({file,assignments:approved,resolveTurn,pools,signal,host:{
+  const coordinator=createWorkerCoordinator({file,assignments:approved,resolveTurn,pools,signal,openTools,host:{
     admit,health,
     launch:async({job,generation})=>{selected(job);return{worker:job.worker,generation};},
     execute:args=>relay(args),

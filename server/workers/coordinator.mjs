@@ -3,14 +3,24 @@ import { createJobPlanner } from './job-planner.mjs';
 import { createDispatcher } from './dispatch.mjs';
 import { createWorkerAdapter } from './controller-adapter.mjs';
 import { bindWorkerPermissions } from './controller-permissions.mjs';
+import {createDurableToolExecutor} from './tool-executor.mjs';
 import { isDeepStrictEqual } from 'node:util';
 
-export function createWorkerCoordinator({ file, assignments, resolveTurn, pools, host, signal }) {
+export function createWorkerCoordinator({ file, assignments, resolveTurn, pools, host, signal, openTools }) {
   if (!signal || !['admit','launch','execute','stop','inspectStopped','health'].every(key => typeof host?.[key] === 'function')) {
     throw Error('Bounded trusted worker host required');
   }
+  if (openTools !== undefined && typeof openTools !== 'function') throw Error('Trusted controller tool session factory required');
   const ledger = new JobLedger(file), contexts = new Map(), adapters = new Map();
   const planner = createJobPlanner({ ledger, assignments, resolveTurn });
+  const sessionFor = job => {
+    const context=contexts.get(job.id);
+    if (!context?.tools || context.generation !== job.generation || ledger.get(job.id).state !== 'running')
+      throw Error('Controller tool session unavailable');
+    return context.tools;
+  };
+  const tools = openTools ? createDurableToolExecutor({ledger,
+    authorize:args=>sessionFor(args.job).authorize(args),dispatch:args=>sessionFor(args.job).dispatch(args)}) : undefined;
   const dispatcher = createDispatcher({ ledger, waitForCapacity:true, signal,
     onQueued:job => {
       const context=contexts.get(job.id);
@@ -33,7 +43,22 @@ export function createWorkerCoordinator({ file, assignments, resolveTurn, pools,
       context.permissions = bindWorkerPermissions({ ledger, jobId:job.id, generation:lease.generation,
         botId:job.bot, threadId:job.thread, turnId:context.turnId, signal,
         isCurrent:() => contexts.get(job.id) === context && ledger.get(job.id).state === 'running' });
-      return host.execute({ job, lease, handle, input:context.input, turnId:context.turnId, signal, heartbeat,
+      if (openTools) {
+        context.tools=await openTools({job,lease,input:context.input,turnId:context.turnId,signal,
+          isCurrent:()=>contexts.get(job.id)===context && ledger.get(job.id).state==='running',
+          emit:event=>{
+            if(event.threadId!==job.thread || event.turnId!==context.turnId || contexts.get(job.id)!==context)
+              throw Error('Foreign controller tool event');
+            if(!['request.opened','request.resolved','item.started','item.completed','runtime.notice'].includes(event.type))
+              throw Error('Invalid controller tool event');
+            if(event.type==='request.opened' && ledger.pendingRequests(job.id).some(row=>row.requestId===event.requestId))
+              throw Error('Conflicting tool permission identity');
+            context.emit({...event,provider:'isolatedWorker'});
+          }});
+        if(!['authorize','dispatch','hasRequest','respondToRequest','close'].every(key=>typeof context.tools?.[key]==='function'))
+          throw Error('Invalid controller tool session');
+      }
+      try { return await host.execute({ job, lease, handle, input:context.input, turnId:context.turnId, signal, heartbeat,
         emit:event => {
           if (event.threadId !== job.thread || event.turnId !== context.turnId || contexts.get(job.id) !== context) return;
           if (event.type === 'turn.completed' || event.type === 'cap.exhausted') {
@@ -42,6 +67,7 @@ export function createWorkerCoordinator({ file, assignments, resolveTurn, pools,
           }
           if (context.terminal) throw Error('Worker event after terminal');
           if (event.type === 'request.opened') {
+            if(context.tools?.hasRequest(event.requestId)) throw Error('Conflicting tool permission identity');
             const { raw, ...request } = event;
             const existing = ledger.pendingRequests(job.id).find(row => row.requestId === request.requestId);
             if (existing) {
@@ -53,7 +79,7 @@ export function createWorkerCoordinator({ file, assignments, resolveTurn, pools,
         },
         pollPermission:requestId => ledger.pollRequest(lease,requestId),
         acknowledgePermission:(requestId,outcome) => ledger.acknowledgeRequest(lease,requestId,outcome),
-      });
+      }); } finally { await context.tools?.close(); }
     },
     stop:identity => host.stop(identity), inspectStopped:identity => host.inspectStopped(identity),
   });
@@ -89,6 +115,7 @@ export function createWorkerCoordinator({ file, assignments, resolveTurn, pools,
         },
         answer:({threadId,turnId,requestId,decision}) => {
           const context = [...contexts.values()].find(value => value.input.threadId === threadId && value.turnId === turnId);
+          if(context?.tools?.hasRequest(requestId)) return context.tools.respondToRequest(threadId,requestId,decision);
           return context?.permissions?.respondToRequest(threadId,requestId,decision) ?? 'unavailable';
         },
         cancel:async ({threadId,turnId}) => {
@@ -103,7 +130,7 @@ export function createWorkerCoordinator({ file, assignments, resolveTurn, pools,
       adapters.set(instanceId,adapter); return adapter;
     },
   };
-  return { bootstrap, ledger,
+  return { bootstrap, ledger, tools,
     async drain() { return Promise.allSettled([...contexts.values()].map(context => context.completion)); },
     close() {
       if (contexts.size) throw Error('Worker settlement still pending');

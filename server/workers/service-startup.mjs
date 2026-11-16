@@ -12,7 +12,7 @@ const read=file=>{
   const bytes=readFileSync(file);if(bytes.length>65536)throw Error('Service credential file too large');return bytes.toString('utf8');
 };
 
-export async function loadConfiguredServiceStartup({config,dataDir,resolveTurn}) {
+export async function loadConfiguredServiceStartup({config,dataDir,resolveTurn,openTools}) {
   if(!exact(config,['version','kind','maxRunning','assignments','pools','services','transport']) || config.version!==2 || config.kind!=='services' ||
      !Number.isSafeInteger(config.maxRunning) || config.maxRunning<1 || config.maxRunning>64 ||
      !Array.isArray(config.assignments) || !config.assignments.length || config.assignments.length>64 || typeof resolveTurn!=='function')
@@ -46,7 +46,7 @@ export async function loadConfiguredServiceStartup({config,dataDir,resolveTurn})
       const current=coordinator.ledger.get(job.id);return current.state==='running' && current.generation===job.generation && current.worker===job.worker;
     }});
     coordinator=createServiceWorkerCoordinator({file:join(directory,'jobs.db'),assignments:config.assignments,pools:config.pools,resolveTurn,clients,
-      signal:control.signal,admit:admission.acquire,onStopped:admission.release,
+      signal:control.signal,openTools,admit:admission.acquire,onStopped:admission.release,
       health:async({pool}={})=>{
         if(control.signal.aborted)return false;
         const relevant=config.assignments.filter(row=>pool===undefined || row.pool===pool).map(row=>row.worker);
@@ -55,7 +55,7 @@ export async function loadConfiguredServiceStartup({config,dataDir,resolveTurn})
       }});
     if(coordinator.ledger.db.prepare("SELECT count(*) AS n FROM jobs WHERE state IN ('running','cancelling','uncertain')").get().n)
       throw Error('Worker startup requires reconciliation of prior leases');
-    transport=await listenTransport({ledger:coordinator.ledger,controllerToken:token,workers,tls,
+    transport=await listenTransport({ledger:coordinator.ledger,tools:coordinator.tools,controllerToken:token,workers,tls,
       listenHost:t.listenHost,advertisedHost:t.advertisedHost,port:t.port});
     return{bootstrap:coordinator.bootstrap,close};
   }catch(error){await close();throw error;}
