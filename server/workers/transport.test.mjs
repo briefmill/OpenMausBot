@@ -1,3 +1,5 @@
+import {createDurableToolExecutor} from './tool-executor.mjs';
+import {workerClient} from './worker-client.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
@@ -19,7 +21,7 @@ async function setup(t, options = {}) {
     { id: 'worker1', token: worker, capacity: 1, assignments: [assignment, { ...assignment, resource: 'desktop:second' }] },
     { id: 'worker2', token: other, capacity: 1, assignments: [{ ...assignment, bot: 'personal-email', project: 'personal' }] },
   ];
-  const transport = await listenTransport({ ledger, controllerToken: controller, workers, leaseMs: 1000 });
+  const transport = await listenTransport({ ledger, controllerToken: controller, workers, leaseMs: 1000, tools:options.toolsFactory?.(ledger) });
   t.after(async () => { await transport.close(); ledger.close(); rmSync(dir, { recursive: true, force: true }); });
   const call = async (path, credential, body, headers = {}) => {
     const r = await fetch(transport.origin + path, {
@@ -162,4 +164,33 @@ test('controller reads ordered event history with a cursor; workers cannot read 
   assert.equal((await f.call('/v1/jobs/one/events',f.controller,undefined,{'x-after-seq':'9007199254740992'})).status,400);
   assert.deepEqual(f.ledger.readEvents('one',0,1).events.map(x=>x.seq),[1]);
   assert.equal(f.ledger.readEvents('one',0,1).hasMore,true);
+});
+
+
+test('worker tools use the authenticated lease and persist one controller-authorized invocation',async t=>{
+  let executions=0,authorizations=0;
+  const f=await setup(t,{toolsFactory:ledger=>createDurableToolExecutor({ledger,
+    authorize:async({job,call})=>{authorizations++;return job.bot===assignment.bot&&call.tool==='mcp:mail:read';},
+    dispatch:async({job})=>{executions++;return{ok:true,text:'Own report for '+job.thread};}})});
+  await f.call('/v1/jobs',f.controller,{id:'tools',...assignment});
+  const lease=(await f.call('/v1/jobs/tools/claim',f.worker,{})).body.lease;
+  const client=workerClient({origin:f.origin,token:f.worker});t.after(()=>client.close());
+  const request={jobId:'tools',lease,call:{id:'call-one',tool:'mcp:mail:read',arguments:{query:'synthetic'}},signal:AbortSignal.timeout(2000)};
+  assert.equal((await client.callTool(request)).replay,false);assert.equal((await client.callTool(request)).replay,true);
+  assert.equal(executions,1);assert.equal(authorizations,1);
+  const stored=await client.toolResult({jobId:'tools',lease,callId:'call-one',signal:AbortSignal.timeout(2000)});
+  assert.equal(stored.invocation.state,'completed');assert.equal(stored.invocation.result.ok,true);
+  const auth={generation:lease.generation,token:lease.token};
+  assert.equal((await f.call('/v1/jobs/tools/tool-result',f.other,{...auth,callId:'call-one'})).status,403);
+  assert.equal((await f.call('/v1/jobs/tools/tools',f.controller,{...auth,call:request.call})).status,403);
+  assert.equal((await f.call('/v1/jobs/tools/tools',f.worker,{...auth,call:{...request.call,id:'forged'},authorize:true})).status,400);
+  await f.call('/v1/jobs/tools/cancel',f.controller,{});
+  await assert.rejects(client.callTool({...request,call:{...request.call,id:'after-cancel'}}),/Do not repeat/);assert.equal(executions,1);
+});
+
+test('tool execution stays unavailable without a trusted controller relay',async t=>{
+  const f=await setup(t);await f.call('/v1/jobs',f.controller,{id:'no-relay',...assignment});
+  const lease=(await f.call('/v1/jobs/no-relay/claim',f.worker,{})).body.lease;
+  const response=await f.call('/v1/jobs/no-relay/tools',f.worker,{generation:lease.generation,token:lease.token,
+    call:{id:'read',tool:'read',arguments:{}}});assert.equal(response.status,503);
 });

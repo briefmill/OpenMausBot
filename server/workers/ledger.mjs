@@ -350,6 +350,12 @@ export class JobLedger {
     if (!['running', 'cancelling'].includes(job.state) || job.deadline <= this.now()) return { outcome: 'unavailable' };
     return { outcome: null };
   }
+  unfinishedToolCalls(id, generation) {
+    const job = this.get(id);
+    if (job.generation !== generation) throw Error('Stale generation');
+    if (!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='worker_tool_calls'").get()) return [];
+    return this.db.prepare("SELECT id,tool,state FROM worker_tool_calls WHERE job=? AND generation=? AND state IN ('pending','dispatching','uncertain') ORDER BY id").all(id,generation);
+  }
   finish(lease, outcome, artifact) {
     if (!['completed', 'failed', 'cancelled'].includes(outcome)) throw Error('Invalid outcome');
     if (!artifact || Object.keys(artifact).sort().join(',') !== 'bytes,sha256' ||
@@ -357,6 +363,8 @@ export class JobLedger {
       throw Error('Invalid artifact receipt');
     return this.transaction(() => {
       const row = this.owned(lease);
+      if (this.unfinishedToolCalls(row.id,row.generation).length)
+        throw Error('Unfinished controller tool operations require reconciliation');
       if (row.state === 'cancelling' && outcome !== 'cancelled') throw Error('Cancellation requires reconciliation');
       if (outcome === 'completed') {
         const stored = this.db.prepare('SELECT bytes FROM artifacts WHERE job=? AND generation=? AND sha256=?')
@@ -371,3 +379,4 @@ export class JobLedger {
     });
   }
 }
+

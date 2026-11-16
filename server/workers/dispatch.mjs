@@ -47,6 +47,10 @@ export function createDispatcher({ ledger, launch, execute, stop, inspectStopped
       } finally { clearTimeout(timer); }
       // Expired leases deliberately fail here. Restart recovery requires the
       // existing explicit reconciliation path rather than silent reassignment.
+      if (ledger.unfinishedToolCalls(id,lease.generation).length) {
+        ledger.cancel(id);
+        return { started:true, settled:false, reason:'controller-tool-outcome-unverified' };
+      }
       const current = ledger.get(id);
       const providerFailed = result?.ok === false || result?.result?.ok === false;
       const outcome = current.state === 'cancelling' ? 'cancelled' : failure || providerFailed ? 'failed' : 'completed';

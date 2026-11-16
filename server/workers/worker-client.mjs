@@ -17,6 +17,7 @@ export function workerClient({ origin, token, heartbeatMs = 1000, pollMs = 50, t
   if (typeof token !== 'string' || token.length < 32) throw Error('Worker credential required');
   if (!Number.isSafeInteger(pollMs) || pollMs < 1 || pollMs > 1000) throw Error('Invalid poll interval');
   const secure = tls ? tlsRequester(origin, tls, {allowRemote}) : null;
+  const toolSecure = tls ? tlsRequester(origin,tls,{allowRemote,timeoutMs:300000}) : null;
   const call = async (path, body, signal) => {
     if (secure) return secure.call(path, token, body, signal);
     const response = await fetch(origin + path, {
@@ -28,7 +29,18 @@ export function workerClient({ origin, token, heartbeatMs = 1000, pollMs = 50, t
     return response.json();
   };
   return {
-    close: () => secure?.close(),
+    close: () => {secure?.close();toolSecure?.close();},
+    async callTool({jobId,lease,call:invocation,signal}){
+      safeId(jobId);if(lease?.id!==jobId)throw Error('Foreign tool job');
+      try{
+        const path=`/v1/jobs/${jobId}/tools`,body={generation:lease.generation,token:lease.token,call:invocation};
+        return toolSecure?await toolSecure.call(path,token,body,signal):await call(path,body,signal);
+      }catch{throw Error('Tool delivery unresolved; inspect the same invocation ID before retrying. Do not repeat with a new ID.');}
+    },
+    async toolResult({jobId,lease,callId,signal}){
+      safeId(jobId);safeId(callId);if(lease?.id!==jobId)throw Error('Foreign tool job');
+      return call(`/v1/jobs/${jobId}/tool-result`,{generation:lease.generation,token:lease.token,callId},signal);
+    },
     async verifyLease({jobId,lease,signal}) {
       safeId(jobId);
       const {job}=await call(`/v1/jobs/${jobId}`,undefined,signal);
@@ -76,3 +88,4 @@ export function workerClient({ origin, token, heartbeatMs = 1000, pollMs = 50, t
     },
   };
 }
+

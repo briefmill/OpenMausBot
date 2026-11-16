@@ -24,7 +24,8 @@ async function jsonBody(req, limit = 70_000) {
 
 // Loopback is the default. A host-selected remote binding requires mutual TLS.
 export async function listenTransport({ ledger, controllerToken, workers, leaseMs = 30_000, tls,
-  listenHost='127.0.0.1',advertisedHost='127.0.0.1',port=0 }) {
+  listenHost='127.0.0.1',advertisedHost='127.0.0.1',port=0,tools }) {
+  if(tools!==undefined && !['execute','inspect'].every(key=>typeof tools?.[key]==='function'))throw Error('Trusted controller tool relay required');
   if(!Number.isSafeInteger(port) || port<0 || port>65535)throw Error('Invalid worker listener port');
   if(!['127.0.0.1','0.0.0.0','::'].includes(listenHost) || !validWorkerHost(advertisedHost) || advertisedHost==='0.0.0.0' ||
      ((listenHost!=='127.0.0.1' || advertisedHost!=='127.0.0.1') && !tls))throw Error('Explicit mutual TLS remote binding required');
@@ -66,7 +67,7 @@ export async function listenTransport({ ledger, controllerToken, workers, leaseM
       if (!match || !principal) throw denied(401, 'Unauthorized');
       if (tls && (!req.socket.authorized || !req.socket.getPeerCertificate().raw ||
           digest(req.socket.getPeerCertificate().raw).toString('hex') !== principal.certificatePin)) throw denied(403, 'Forbidden');
-      const route = /^\/v1\/jobs(?:\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})(?:\/(claim|heartbeat|events|finish|cancel|requests|artifacts)(?:\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})\/(decision|poll|ack|result))?)?)?$/.exec(req.url);
+      const route = /^\/v1\/jobs(?:\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})(?:\/(claim|heartbeat|events|finish|cancel|requests|artifacts|tools|tool-result)(?:\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})\/(decision|poll|ack|result))?)?)?$/.exec(req.url);
       if (!route) throw denied(404, 'Not found');
       const [, id, action, requestId, requestAction] = route;
       if (requestId && action !== 'requests') throw denied(404, 'Not found');
@@ -97,7 +98,7 @@ export async function listenTransport({ ledger, controllerToken, workers, leaseM
       // Neither a worker credential nor a controller bearer can attest host
       // shutdown. Trusted dispatch settles locally after host inspection.
       if (action === 'finish') throw denied(403, 'Host-verified settlement required');
-      const body = await jsonBody(req, action === 'artifacts' ? 12 * 1024 * 1024 : 70_000);
+      const body = await jsonBody(req, action === 'artifacts' ? 12 * 1024 * 1024 : action === 'tools' ? 1024 * 1024 + 65536 : 70_000);
       if (action === 'requests' && requestAction === 'result') {
         if (principal.role !== 'controller') throw denied(403, 'Forbidden');
         exact(body, ['generation']);
@@ -120,6 +121,19 @@ export async function listenTransport({ ledger, controllerToken, workers, leaseM
         return send(lease ? 200 : 409, lease ? { lease } : { error: 'Capacity or resource unavailable' });
       }
       const lease = { id, worker: principal.id, generation: body.generation, token: body.token };
+      if(action==='tools' || action==='tool-result'){
+        if(!tools)throw denied(503,'Worker tool relay unavailable');
+        ledger.owned(lease);
+        if(action==='tool-result'){
+          exact(body,['generation','token','callId']);
+          return send(200,{invocation:tools.inspect({lease,callId:body.callId})});
+        }
+        exact(body,['generation','token','call']);
+        const control=new AbortController(),timer=setTimeout(()=>control.abort(),300000);
+        const disconnected=()=>{if(!res.writableEnded)control.abort();};res.once('close',disconnected);
+        try{return send(200,await tools.execute({lease,call:body.call,signal:control.signal}));}
+        finally{clearTimeout(timer);res.removeListener('close',disconnected);}
+      }
       if (action === 'artifacts') {
         exact(body, ['generation', 'token', 'base64']);
         if (typeof body.base64 !== 'string') throw denied(400, 'Invalid artifact');
@@ -159,3 +173,4 @@ export async function listenTransport({ ledger, controllerToken, workers, leaseM
     close: () => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())),
   };
 }
+

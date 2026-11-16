@@ -12,6 +12,12 @@ The Linux supervisor runs as root in an operator-confirmed dedicated PID namespa
 
 Cancellation before delivery creates a durable tombstone. Duplicate generations cannot execute again. An expired heartbeat, lost connection or unverified shutdown retains ownership for trusted reconciliation. Restart does not silently retry external actions. Controller workspace backups preserve destination worker authority and omit the host-bound ledger. Worker files and consumed-generation records survive container replacement in the named-volume fixture. Full backup/restore still needs acceptance.
 
+## Durable tool relay candidate
+
+The optional authenticated tool endpoint journals invocation IDs under the job and generation. Completed retries return the saved result. In-flight and unknown outcomes refuse repeat dispatch; the dispatcher keeps ownership even after verified worker shutdown and emits a hold notice. Controller-selected callbacks must authorize and execute each call. Without these callbacks, the endpoint returns unavailable.
+
+Local tests cover parallel calls from separate bots, replay, cancellation, restart, foreign leases and uncertain outcomes. This relay still needs the app's account-scoped MCP sessions, saved grants and separate send approvals. It does not yet provide connected-app tools to deployed native workers.
+
 ## Controller startup
 
 OMB_WORKER_HOST_CONFIG selects an operator-owned JSON file outside bot-editable folders. Without it, worker startup stays inert. Version 1 retains Docker/SSH startup. Version 2 uses kind services and these exact keys:

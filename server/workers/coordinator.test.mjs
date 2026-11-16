@@ -85,3 +85,29 @@ test('remote host admission remains mandatory without a local engine callback',a
     assert.equal(admissions,1);assert.equal(launches,0);
   }finally{c.close();}
 });
+
+
+test('unknown controller tool outcome keeps the turn held and explains the hold',async()=>{
+  const {createDurableToolExecutor}=await import('./tool-executor.mjs');
+  const events=[];
+  const c=createWorkerCoordinator({file:':memory:',assignments,pools,signal:AbortSignal.timeout(5000),
+    resolveTurn:(bot,thread)=>({bot,thread,requestId:'request',active:true}),
+    host:{admit:async()=>{},health:async()=>true,launch:async()=>({}),
+      execute:async({job,lease,turnId,emit,signal})=>{
+        const tools=createDurableToolExecutor({ledger:c.ledger,authorize:async()=>true,
+          dispatch:async()=>{throw Error('uncertain');}});
+        await assert.rejects(tools.execute({lease,signal,call:{id:'one',tool:'synthetic:read',arguments:{}}}),/reconciliation/);
+        emit({type:'turn.completed',eventId:'done',threadId:job.thread,turnId,ok:true});
+        return{ok:true};
+      },stop:async()=>{},inspectStopped:async()=>true}});
+  try{
+    const adapter=await c.bootstrap.createAdapter({instanceId:'worker',pool:'pool'});
+    adapter.onEvent(e=>events.push(e));
+    await adapter.sendTurn({botId:'bot-a',threadId:'thread',text:'Synthetic',approvalMode:'ask',mcpFromUserConfig:false,toolScope:{}});
+    const results=await c.drain();
+    assert.equal(results[0].value.reason,'controller-tool-outcome-unverified');
+    assert.equal(events.some(e=>e.type==='turn.completed'),false);
+    assert.equal(events.filter(e=>e.type==='runtime.notice' && e.message.includes('prevent duplicate')).length,1);
+    assert.throws(()=>c.close(),/settlement/);
+  }finally{c.ledger.close();}
+});

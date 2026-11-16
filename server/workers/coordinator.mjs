@@ -71,6 +71,11 @@ export function createWorkerCoordinator({ file, assignments, resolveTurn, pools,
           const completion = new Promise(resolve => setImmediate(resolve)).then(() => dispatcher.dispatch(plan.job.id,plan.worker));
           context.completion = completion;
           completion.then(result => {
+            if (result.reason === 'controller-tool-outcome-unverified' && contexts.get(plan.job.id) === context) {
+              context.emit({provider:'isolatedWorker',threadId:input.threadId,turnId:context.turnId,
+                eventId:'held-tool-'+plan.job.id,type:'runtime.notice',
+                message:'A tool may have completed. This job is on hold to prevent duplicate actions. Check its result before retrying.'});
+            }
             if (result.settled && contexts.get(plan.job.id) === context) {
               const terminal = context.terminal;
               context.emit(terminal ? {...terminal,ok:result.outcome === 'completed' && terminal.ok === true} : {

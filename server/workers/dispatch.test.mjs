@@ -116,3 +116,28 @@ test('pre-dispatch cancellation and expired queue signal cannot launch a worker'
     assert.equal((await dispatcher.dispatch('b','worker')).outcome,'cancelled');assert.equal(launches,0);
   } finally {ledger.close();}
 });
+
+
+test('verified worker shutdown cannot release an uncertain controller tool action', async () => {
+  const { createDurableToolExecutor } = await import('./tool-executor.mjs');
+  const ledger = new JobLedger(':memory:');
+  try {
+    ledger.enqueue(job('a')); ledger.enqueue(job('b'));
+    let stopped = false, upstream = 0;
+    const tools = createDurableToolExecutor({ledger,authorize:async()=>true,
+      dispatch:async()=>{upstream++;throw Error('unknown remote outcome');}});
+    const dispatcher = createDispatcher({ledger,launch:async()=>({}),
+      execute:async({lease})=>{
+        await assert.rejects(tools.execute({lease,call:{id:'one',tool:'synthetic:read',arguments:{}},
+          signal:AbortSignal.timeout(1000)}),/reconciliation/);
+        return {ok:true};
+      },stop:async()=>{stopped=true;},inspectStopped:async()=>stopped});
+    assert.deepEqual(await dispatcher.dispatch('a','worker-a'),
+      {started:true,settled:false,reason:'controller-tool-outcome-unverified'});
+    assert.equal(stopped,true); assert.equal(upstream,1);
+    assert.equal(ledger.get('a').state,'cancelling');
+    assert.equal(ledger.claim('b','worker-b',1000),null);
+    assert.deepEqual(ledger.unfinishedToolCalls('a',1).map(row=>({...row})),[{id:'one',tool:'synthetic:read',state:'uncertain'}]);
+    assert.throws(()=>ledger.unfinishedToolCalls('a',2),/Stale/);
+  } finally { ledger.close(); }
+});
