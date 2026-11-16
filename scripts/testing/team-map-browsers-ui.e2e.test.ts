@@ -53,6 +53,10 @@ const binary = process.env.OMB_MAP_TEST_AGENT_BROWSER;
         upstream.on("error", () => { res.writeHead(502); res.end(); }); req.pipe(upstream);
       });
     };
+    for (const section of ["General", "BVS", "Briefmill", "Proxie", "Inner Clip", "Personal"]) {
+      await api("POST", "/api/bots", { name: `Demo ${section} specialist`, section, browser: false });
+    }
+    await api("PATCH", "/api/team-map/layout", { positions: Object.fromEntries(["Engineering", "General", "BVS", "Briefmill", "Proxie", "Inner Clip", "Personal"].map((key) => [key, { x: 40, y: 40 }])) });
     bridge = createServer(dispatch); upgrades.attach(bridge, dispatch);
     await new Promise<void>((resolve) => bridge!.listen(0, "127.0.0.1", resolve));
     preview = await mountPreview({ info: { url: `http://127.0.0.1:${(bridge.address() as AddressInfo).port}` } }, {
@@ -86,6 +90,18 @@ const binary = process.env.OMB_MAP_TEST_AGENT_BROWSER;
     await evaluate("document.querySelector('header button').click()");
     await expect.poll(() => stream.size, { timeout: 10_000 }).toBe(0);
     await agentBrowser(binary!, env, ["screenshot", join(evidence, "daylight-before.png")]);
+    const initialPoint = JSON.parse(await evaluate("JSON.stringify((()=>{const r=document.querySelector('[data-arrange-team=Engineering]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})())") as string);
+    expect(initialPoint.x).toBeGreaterThan(0);
+    expect(initialPoint.y).toBeGreaterThan(0);
+    const initialX = (await api("GET", "/api/team-map/layout")).layout.positions.Engineering.x;
+    await agentBrowser(binary!, env, ["mouse", "move", String(Math.round(initialPoint.x)), String(Math.round(initialPoint.y))]);
+    await agentBrowser(binary!, env, ["mouse", "down", "left"]);
+    await agentBrowser(binary!, env, ["mouse", "move", String(Math.round(initialPoint.x + 30)), String(Math.round(initialPoint.y + 30))]);
+    await agentBrowser(binary!, env, ["mouse", "up", "left"]);
+    await expect.poll(async () => (await api("GET", "/api/team-map/layout")).layout.positions.Engineering.x).not.toBe(initialX);
+    const draggedLeft = await evaluate("document.querySelector('[data-team-key=Engineering]').style.left");
+    await new Promise((resolve) => setTimeout(resolve, 11000));
+    expect(await evaluate("document.querySelector('[data-team-key=Engineering]').style.left")).toBe(draggedLeft);
     await evaluate("document.querySelector('[data-arrange-team=Engineering]').focus()");
     await agentBrowser(binary!, env, ["press", "Shift+ArrowRight"]);
     await expect.poll(async () => (await api("GET", "/api/team-map/layout")).layout.positions.Engineering?.x).toBeTypeOf("number");

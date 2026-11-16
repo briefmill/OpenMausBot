@@ -7,7 +7,7 @@ import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { teamMapStatus, type TeamMapSection } from "@/lib/team-map";
 import { COMPUTER_DRAG_TYPE, fitTeams, layoutTeams, orderBots, parseBotOrders, parsePositions, reorderBot, teamSize, zoomAt, type Point, type View } from "@/lib/team-canvas";
-import { bestColumns, polylinePath, teamGeometry, type TeamGeometry } from "@/lib/team-canvas-computers";
+import { polylinePath, teamGeometry, type TeamGeometry } from "@/lib/team-canvas-computers";
 import { teamComputersFor, type ShownFrame } from "@/lib/map-computers";
 import { activityPreview, botEngine } from "@/lib/failed-turn";
 import { computerStepLine } from "@/lib/computer-step";
@@ -143,7 +143,6 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
   const [announcement, setAnnouncement] = useState("");
   const [layoutLoaded, setLayoutLoaded] = useState(false);
   const [menuAbove, setMenuAbove] = useState<string | null>(null);
-  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const geometries = useMemo<Array<TeamGeometry | null>>(() => sections.map((section) => {
     if (!computers.length && !showBrowsers) return null;
     const order = Object.hasOwn(botOrders, section.key) ? botOrders[section.key] : [];
@@ -155,10 +154,9 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
   const columnsFor = useMemo(() => {
     if (!geometries.some(Boolean)) return undefined;
     const sizes = geometries.map((geometry, index) => geometry ?? teamSize(sections[index]));
-    // Rounded so a small window resize never reshuffles the teams.
-    return { sizes, columns: bestColumns(sizes, { width: Math.round(viewportSize.width / 200) * 200, height: Math.round(viewportSize.height / 200) * 200 }) };
-  }, [geometries, sections, viewportSize]);
-  const tiles = useMemo(() => layoutTeams(sections, positions, columnsFor), [sections, positions, columnsFor]);
+    return { sizes, columns: 2, avoidOverlap: true };
+  }, [geometries, sections]);
+  const tiles = useMemo(() => layoutTeams(sections, positions, { ...columnsFor, avoidOverlap: true }), [sections, positions, columnsFor]);
   const current = useRef({ view, positions, tiles, selectedId: state.selectedId, settingsOpen: state.settingsOpen, bottomInset });
   current.current = { view, positions, tiles, selectedId: state.selectedId, settingsOpen: state.settingsOpen, bottomInset };
 
@@ -185,9 +183,9 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
     setBotOrders(syncedLayout.botOrders);
   }, [syncedLayout]);
 
-  const savePositions = (next: Record<string, Point>) => {
+  const savePositions = (next: Record<string, Point>, changedKey: string) => {
     setPositions(next);
-    saveMapLayout({ positions: Object.fromEntries(Object.entries(next).filter(([key, point]) => positions[key]?.x !== point.x || positions[key]?.y !== point.y)) });
+    saveMapLayout({ positions: { [changedKey]: next[changedKey] } });
     if (!storageKey.current) return;
     try {
       localStorage.setItem(storageKey.current, JSON.stringify(Object.fromEntries(sections
@@ -224,7 +222,6 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
     let previousSize: { width: number; height: number } | null = null;
     const observer = new ResizeObserver(() => {
       const bounds = element.getBoundingClientRect();
-      setViewportSize({ width: bounds.width, height: bounds.height });
       if (!previousSize) fit();
       else {
         const card = current.current.settingsOpen ? [...element.querySelectorAll<HTMLElement>("[data-bot-id]")]
@@ -335,7 +332,7 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
     if (active.kind === "team" && event) savePositions({ ...active.positions, [active.key]: {
       x: active.origin.x + (event.clientX - active.start.x) / active.view.scale,
       y: active.origin.y + (event.clientY - active.start.y) / active.view.scale,
-    } });
+    } }, active.key);
     if (active.kind === "bot" && event) {
       const destination = destinationAt(event.clientX, event.clientY);
       if (destination === null) return;
@@ -448,7 +445,7 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
                 if (!delta) return;
                 event.preventDefault(); event.stopPropagation();
                 const step = event.shiftKey ? 40 : 10;
-                savePositions({ ...positions, [section.key]: { x: tile.x + delta[0] * step, y: tile.y + delta[1] * step } });
+                savePositions({ ...positions, [section.key]: { x: tile.x + delta[0] * step, y: tile.y + delta[1] * step } }, section.key);
               }}>
               <h2 className="truncate text-[13px] font-semibold tracking-tight">{section.name}</h2>
             </button>

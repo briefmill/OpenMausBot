@@ -16,3 +16,11 @@ Deployed on 2026-11-16 as Railway deployment `804b0101-da6b-432e-ab86-fb4e77252a
 The first deployment used an outdated startup wrapper and was restored to the previous working build. The final candidate preserves the exact qualified production runtime baseline (`0f4bbb77627847d82de415134f0b029c633abf48b0b63680f525a732b92761dd`) and current `main161-boot.mjs` wrapper. Five uniquely matched changes add the browser viewer guard and layout route, leaving existing mailbox and access controls intact. The preserved bundle passed packaged-server startup, restart, proxy, authorization and encrypted-backup checks, plus layout persistence across restart and service-trust denial. The temporary SSH key used to retrieve and verify the qualified runtime was revoked successfully.
 
 Fedora UI and server files were installed with rollback backups. The native Fedora window and a physical Windows device have not been visually verified; connected desktop apps load the updated hosted renderer after reopening.
+
+## Drag and expanded-layout regression fix
+
+Pointer movement already updates React's position state. Comparing the final drop against that state incorrectly produced an empty patch, so the next sync poll restored the old position. Position saves now carry the explicit department key for both pointer and keyboard moves.
+
+Department auto-placement uses the same two-column world layout regardless of window size. Collision resolution separates old saved coordinates when browser/VM monitors expand department bounds; valid non-overlapping positions remain unchanged.
+
+Verification: 29 layout/geometry tests pass, and the real Chrome fixture passes with seven departments seeded at overlapping coordinates. It performs a real mouse drag, verifies the server received the changed position, waits eleven seconds across two synchronization polls, then loads that saved position in a second isolated browser profile. Both live browser previews still render and disconnect when hidden.
