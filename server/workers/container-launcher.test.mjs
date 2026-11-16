@@ -6,6 +6,15 @@ import {createContainerSupervisor} from './container-supervisor.mjs';
 const plan={image:'sha256:'+'a'.repeat(64),cpus:1,memoryBytes:512*1024*1024,pids:128,shmBytes:64*1024*1024,
   network:'none',command:['node','/opt/worker/agent.mjs']};
 const args={job:{id:'job',worker:'worker',bot:'bot',thread:'thread'},generation:1,pool:'pool',signal:AbortSignal.timeout(1000)};
+test('persistent mount requires affirmative ownership verification for the leased resource',async()=>{
+  let calls=0;
+  const run=async()=>{calls++;return{stdout:'b'.repeat(64)};};
+  const supervisor=createContainerSupervisor({run,dockerArgs:v=>v,namespace:'host'});
+  const launch=createContainerLauncher({run,dockerArgs:v=>v,supervisor,storage:{verify:async()=>false},
+    resolvePlan:async()=>({...plan,workspace:{name:'omb-workspace-'+'a'.repeat(40),resource:'workspace'}})});
+  await assert.rejects(launch({...args,job:{...args.job,project:'project',resources:['desktop','workspace']}}),/verification failed/);
+  assert.equal(calls,0);
+});
 test('container launch uses fixed ownership, image and hardening from trusted policy',async()=>{
   let received;
   const run=async(argv)=>{received=argv;return{stdout:'b'.repeat(64)};};
