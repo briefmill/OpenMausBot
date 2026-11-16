@@ -24,3 +24,5 @@ Pointer movement already updates React's position state. Comparing the final dro
 Department auto-placement uses the same two-column world layout regardless of window size. Collision resolution separates old saved coordinates when browser/VM monitors expand department bounds; valid non-overlapping positions remain unchanged.
 
 Verification: 29 layout/geometry tests pass, and the real Chrome fixture passes with seven departments seeded at overlapping coordinates. It performs a real mouse drag, verifies the server received the changed position, waits eleven seconds across two synchronization polls, then loads that saved position in a second isolated browser profile. Both live browser previews still render and disconnect when hidden.
+
+The drag/spacing fix is live in deployment `05a417f8-d9cd-49e1-b8af-8bc2f971b238` (SUCCESS). Read-only inspection of the expanded production map found six departments, 46 browser tiles and zero overlapping department rectangles. Fedora UI files were updated with a rollback backup.
