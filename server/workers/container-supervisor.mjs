@@ -34,6 +34,7 @@ export function createContainerSupervisor({run,dockerArgs,namespace}) {
     ['exited','dead','created'].includes(state.Status);
   return {
     labels,
+    inspect,
     async stop(identity) {
       const container=await inspect(identity);
       if(container && !stopped(container.state))await call(['stop','--time','5',container.containerId]);

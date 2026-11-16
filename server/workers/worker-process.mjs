@@ -2,7 +2,7 @@ import { isAbsolute, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { writeSync } from 'node:fs';
 
-async function readTask(stream,signal) {
+export async function readWorkerTask(stream,signal) {
   const chunks=[];let size=0;
   const abort=()=>stream.destroy(Error('Worker deadline'));
   signal.addEventListener('abort',abort,{once:true});
@@ -26,7 +26,7 @@ export async function runWorkerProcess({bootstrapFile,deadlineMs,stdin=process.s
   const abort=()=>control.abort();process.once('SIGTERM',abort);process.once('SIGINT',abort);
   let host;
   try {
-    const task=await readTask(stdin,control.signal);
+    const task=await readWorkerTask(stdin,control.signal);
     const module=await import(pathToFileURL(bootstrapFile).href);
     if(typeof module.bootstrap!=='function')throw Error('Worker bootstrap unavailable');
     host=await module.bootstrap({signal:control.signal});
