@@ -8,11 +8,14 @@ const exact=(value,keys)=>value && typeof value==='object' && !Array.isArray(val
 
 // Trusted host configuration selects the bootstrap, environment and working
 // folder. Killing this child does not attest that its descendants stopped.
-export function createWorkerProcessClient({bootstrapFile,cwd,environment,deadlineMs=300000,onProcess}) {
+export function createWorkerProcessClient({bootstrapFile,cwd,environment,deadlineMs=300000,onProcess,command}) {
   if(!isAbsolute(bootstrapFile??'') || !isAbsolute(cwd??'') || !environment || typeof environment!=='object' ||
      Array.isArray(environment) || Object.values(environment).some(value=>typeof value!=='string') ||
      !Number.isSafeInteger(deadlineMs) || deadlineMs<1 || deadlineMs>300000 || typeof onProcess!=='function')
     throw Error('Trusted worker launch configuration required');
+  if(command!==undefined && (!isAbsolute(command?.executable??'') || !Array.isArray(command.args) ||
+      command.args.some(value=>typeof value!=='string')))throw Error('Trusted process command required');
+  const launch=command?structuredClone(command):{executable:process.execPath,args:[]};
   const env={...environment};
   return async function execute({job,lease,input,signal}) {
     if(!signal || !exact(lease,['id','worker','generation','token','deadline']) || lease.id!==job.id ||
@@ -32,7 +35,7 @@ export function createWorkerProcessClient({bootstrapFile,cwd,environment,deadlin
       };
       const abort=()=>finish(Error('Worker process interrupted; host stop verification required'));
       try {
-        child=spawn(process.execPath,[fileURLToPath(new URL('./worker-process.mjs',import.meta.url)),bootstrapFile,String(deadlineMs)],{
+        child=spawn(launch.executable,[...launch.args,fileURLToPath(new URL('./worker-process.mjs',import.meta.url)),bootstrapFile,String(deadlineMs)],{
           cwd,env:{...env},windowsHide:true,shell:false,stdio:['pipe','ignore','ignore','pipe']});
         child.once('error',()=>finish(Error('Worker process launch failed')));
         child.stdin.on('error',()=>finish(Error('Worker task delivery failed')));
