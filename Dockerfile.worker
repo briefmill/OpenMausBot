@@ -1,0 +1,8 @@
+ARG WORKER_BASE_IMAGE
+FROM ${WORKER_BASE_IMAGE}
+USER 0:0
+RUN test -x /usr/bin/tini && test -x /usr/bin/setpriv && test -x /bin/kill && node -e "if(Number(process.versions.node.split('.')[0])!==24)process.exit(1)"
+COPY --chown=0:0 dist-worker/ /opt/mausbot-worker/
+ENV OMB_WORKER_SERVICE_CONFIG=/run/mausbot-worker/service.json
+EXPOSE 8080 8443
+ENTRYPOINT ["/usr/bin/tini", "--", "node", "/opt/mausbot-worker/service-entry.mjs"]

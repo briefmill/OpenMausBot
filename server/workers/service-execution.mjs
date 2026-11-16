@@ -32,6 +32,7 @@ export function createServiceExecution({file,worker,execute,stop,inspectStopped,
   };
   return{
     state,
+    hasUncertain(){return db.prepare("SELECT count(*) AS n FROM executions WHERE state='uncertain'").get().n>0;},
     cancelUnseen(identity) {
       const encoded=identityFor(identity);
       return db.prepare("INSERT OR IGNORE INTO executions VALUES (?,'cancelled')").run(encoded).changes===1;

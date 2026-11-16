@@ -34,7 +34,7 @@ An explicit listenHost of :: enables dual-stack binding; advertisedHost remains 
 
 Run node scripts/bundle-worker.mjs to create dist-worker. The native bootstrap bundles the real Claude and Codex drivers; the runtime modules need no node_modules. manifest.json records file hashes and exclusions. OMB_NATIVE_WORKER_CONFIG selects a read-only per-worker binding with version, driver, instance, assignment, input and controller. The controller entry contains origin, tokenFile, keyFile, certFile, caFile and serverPin. Ask mode, explicit tool scope and mcpFromUserConfig false remain mandatory.
 
-The release is incomplete: it does not include provider CLIs, a standalone service entry point or a production image. The manifest marks productionReady false. Only Claude has a runtime package qualification so far. No production credentials belong in the build context or image.
+The package now includes service-entry.mjs and the read-only health listener. Dockerfile.worker builds it from an explicitly selected base image; Dockerfile.worker.dockerignore allowlists only the recipe and named runtime files. The base must provide Node 24, Tini, setpriv and kill. A local qualification image builds and rejects missing configuration. Provider CLIs and a qualified production base remain absent; manifest productionReady stays false. Only Claude has runtime qualification. No production credentials belong in the build context or image.
 
 ## Verification evidence
 
@@ -49,7 +49,7 @@ Evidence root: C:\Users\lL0xt\OneDrive\Documents\ManusBot\worker-execution-candi
 | service-app-qualification\packaged-proof.json | Same service path through packaged controller copied outside the repository |
 | native-package-qualification\proof.json | Bundled real Claude driver, fake CLI, two separate threads, event receipt and verified shutdown, external network disabled |
 
-All inference in these fixtures is synthetic. They establish neither real model authentication nor 34-worker throughput. The focused worker suite has 134 passing tests; server typecheck and release build pass. Packaged smoke covers normal startup outside the source tree, proxy paths, CLI/MCP, backup worker, trust gate and desktop entry. Temporary containers, networks and certificates from the full-app fixtures were removed.
+All inference in these fixtures is synthetic. They establish neither real model authentication nor 34-worker throughput. The focused worker suite has 137 passing tests; server typecheck and release build pass. Packaged smoke covers normal startup outside the source tree, proxy paths, CLI/MCP, backup worker, trust gate and desktop entry. Temporary containers, networks and certificates from the full-app fixtures were removed.
 
 ## Railway facts and open gates
 
@@ -57,6 +57,14 @@ All inference in these fixtures is synthetic. They establish neither real model 
 
 [Volumes](https://docs.railway.com/volumes/reference) allow one volume per service and prohibit replicas on volume-backed services. Worker workspace and supervisor journal therefore need separate permission-protected directories within that service's volume. Redeploying a volume-backed service has downtime.
 
-[Health checks](https://docs.railway.com/deployments/healthchecks) use PORT and the healthcheck.railway.app hostname. A separate read-only readiness listener is still required because the execution listener requires client certificates. Railway health checks run at deployment, not as continuous monitoring.
+[Health checks](https://docs.railway.com/deployments/healthchecks) use PORT and the healthcheck.railway.app hostname. The separate read-only readiness listener serves GET /health without exposing execution routes or job details. Configure Railway PORT to match health.port in the protected worker config. The execution listener still requires client certificates. Railway health checks run at deployment, not as continuous monitoring.
 
-Before hosted testing: finish standalone worker startup, package the image, qualify namespace/capabilities and durable volume ownership, and prepare a bounded two-worker staging configuration. Deployment, added resources, credential installation and paid tests require their applicable approvals. Then test worker/controller interruption, reconciliation, volume restore and real read-only integration tasks. Increase capacity in measured steps with CPU, RAM, PID, queue, rate-limit and cost evidence. Do not claim 34-worker capacity before that acceptance.
+Before hosted testing: qualify the production image/base, namespace/capabilities and durable volume ownership, and prepare a bounded two-worker staging configuration. Deployment, added resources, credential installation and paid tests require their applicable approvals. Then test worker/controller interruption, reconciliation, volume restore and real read-only integration tasks. Increase capacity in measured steps with CPU, RAM, PID, queue, rate-limit and cost evidence. Do not claim 34-worker capacity before that acceptance.
+
+## Standalone worker configuration
+
+OMB_WORKER_SERVICE_CONFIG selects a root-owned regular JSON file with mode 0600. The entry opens it without following a symlink. Its exact fields are version, worker, assignment, file, bootstrapFile, cwd, environment, uid, deadlineMs, isolatedPidNamespace, controller, transport and health. version is 1. file is the journal inside a root-only directory. cwd is the worker-owned workspace. The controller object uses the native binding credential-path fields. transport contains listenHost, advertisedHost, port, controllerTokenFile and tls; tls contains keyFile, certFile, caFile and controllerPin. The incoming controller token and service private key require root-only files. health contains listenHost and port, separate from the execution port.
+
+The child environment is explicit; Railway management variables, Docker endpoints, SSH agent sockets and controller startup variables are rejected. Set OMB_NATIVE_WORKER_CONFIG there to the worker's read-only native binding. The entry closes health, drains/stops execution and closes its controller client on SIGTERM. Readiness becomes unavailable when the execution journal contains uncertain ownership. It does not prove provider login or model capacity.
+
+standalone-worker-qualification\proof.json verifies the packaged entry, rejection of an unprotected configuration, readiness, two real-Claude-driver/fake-CLI turns, controller lease checks, recorded events and graceful shutdown. External networking was disabled. image-proof.json records the local worker recipe build and missing-config rejection. These checks do not qualify Railway capabilities, the production base or Codex runtime.

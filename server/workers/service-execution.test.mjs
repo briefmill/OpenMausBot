@@ -28,10 +28,10 @@ test('unverified shutdown holds the service until trusted reconciliation',async(
   let stopped=false;const service=setup({inspectStopped:async()=>stopped});
   try{
     await assert.rejects(service.run(request()),/reconciliation/);
-    assert.equal(service.state(identity),'uncertain');
+    assert.equal(service.state(identity),'uncertain');assert.equal(service.hasUncertain(),true);
     await assert.rejects(service.run(request({...identity,id:'job-b'})),/occupied/);
     await assert.rejects(service.reconcile(identity),/unverified/);
-    stopped=true;await service.reconcile(identity);await service.run(request({...identity,id:'job-b'}));
+    stopped=true;await service.reconcile(identity);assert.equal(service.hasUncertain(),false);await service.run(request({...identity,id:'job-b'}));
   }finally{service.close();}
 });
 

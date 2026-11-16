@@ -39,5 +39,6 @@ export async function createSupervisedExecutionService({file,worker,assignment,v
           ['bot','project','resource'].every(key=>current[key]===job[key]) && JSON.stringify(current.resources)===JSON.stringify(job.resources);
       }});
   }catch(error){journal.close();throw error;}
-  return{origin:listener.origin,async close(){await listener.close();journal.close();}};
+  let closed=false;
+  return{origin:listener.origin,ready:()=>!closed && !journal.hasUncertain(),async close(){closed=true;await listener.close();journal.close();}};
 }
