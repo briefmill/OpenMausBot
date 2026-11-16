@@ -21,3 +21,5 @@
 !dist-worker/service-storage.mjs
 !dist-worker/runtime-preflight.mjs
 !dist-worker/runtime-probe-server.mjs
+!dist-worker/worker-mcp-bridge.mjs
+!dist-worker/worker-mcp-stdio.mjs
