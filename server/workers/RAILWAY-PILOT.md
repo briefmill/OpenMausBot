@@ -37,3 +37,9 @@ The controller regression already proves 34 overlapping logical assignments with
 ## Deployment approval boundary
 
 The next reviewable hosted action must name exact services/environment, immutable image, resource limits, volumes, credentials to provision, expected restart effects, test duration and rollback. Existing production sessions and schedules stay untouched until that action receives applicable approval. This plan does not request approval for an unfinished build.
+
+## Capability boundary for the first pilot
+
+The current service candidate supports native Claude/Codex tasks and scoped controller connected-app tools. It does not yet provide a bot-controlled browser, a full desktop, or bot-to-bot delegation through the isolated adapter. The coordinator advertises customMcp/composioMcp only when the tool relay is enabled; it does not advertise browser/computer/agents capability. Its resource labels reserve assignments but do not start a desktop. Earlier real desktop fixtures used scripted browser actions.
+
+A two-worker native/API pilot is an intermediate acceptance step toward the requested independent computer environments. Complete worker-local browser/desktop integration and delegated job routing before claiming the full requested setup. Keep controller browser bridges outside worker tool relays.

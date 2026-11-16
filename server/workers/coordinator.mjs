@@ -30,7 +30,7 @@ export function createWorkerCoordinator({ file, assignments, resolveTurn, pools,
     onQueued:job => {
       const context=contexts.get(job.id);
       context.emit({provider:'isolatedWorker',threadId:job.thread,turnId:context.turnId,eventId:'queued-'+job.id,
-        type:'runtime.notice',message:'Waiting for the assigned desktop to become available.'});
+        type:'runtime.notice',message:'Waiting for the assigned worker to become available.'});
     },
     launch: async ({ job, generation }) => {
       const context = contexts.get(job.id);
