@@ -5,7 +5,7 @@ import { createWorkerAdapter } from './controller-adapter.mjs';
 import { bindWorkerPermissions } from './controller-permissions.mjs';
 
 export function createWorkerCoordinator({ file, assignments, resolveTurn, pools, host, signal }) {
-  if (!signal || !['launch','execute','stop','inspectStopped','health'].every(key => typeof host?.[key] === 'function')) {
+  if (!signal || !['admit','launch','execute','stop','inspectStopped','health'].every(key => typeof host?.[key] === 'function')) {
     throw Error('Bounded trusted worker host required');
   }
   const ledger = new JobLedger(file), contexts = new Map(), adapters = new Map();
@@ -14,7 +14,8 @@ export function createWorkerCoordinator({ file, assignments, resolveTurn, pools,
     launch: async ({ job, generation }) => {
       const context = contexts.get(job.id);
       if (signal.aborted) throw Error('Worker host stopped');
-      await context.input.engineAdmission('process');
+      await host.admit({ job, pool:context.pool, signal });
+      if (context.input.engineAdmission) await context.input.engineAdmission('process');
       if (signal.aborted || ledger.get(job.id).state !== 'running') throw Error('Turn stopped before host launch');
       context.generation = generation;
       context.handle = await host.launch({ job, generation, pool:context.pool, signal });
@@ -46,7 +47,7 @@ export function createWorkerCoordinator({ file, assignments, resolveTurn, pools,
       if (adapters.has(instanceId)) throw Error('Worker instance requires explicit disposal before replacement');
       const adapter = createWorkerAdapter({ provider:'isolatedWorker', capabilities:{ engineAdmission:true },
         submit:async (input,emit) => {
-          if (signal.aborted || typeof input.engineAdmission !== 'function') throw Error('Worker admission unavailable');
+          if (signal.aborted || (input.engineAdmission !== undefined && typeof input.engineAdmission !== 'function')) throw Error('Worker admission unavailable');
           const plan = planner.plan(input);
           if (plan.pool !== pool || plan.job.state !== 'queued') throw Error('Worker assignment unavailable or awaiting reconciliation');
           const context = { input, emit, pool, worker:plan.worker, jobId:plan.job.id, turnId:'worker-'+plan.job.id };

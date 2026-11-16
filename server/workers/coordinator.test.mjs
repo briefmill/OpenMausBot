@@ -8,7 +8,7 @@ test('coordinator joins scoped planning, concurrent turns, permissions and host 
   let active=0,peak=0,release;const gate=new Promise(resolve=>release=resolve),stopped=new Set(),answers=[];
   const c=createWorkerCoordinator({file:':memory:',assignments,pools,signal:AbortSignal.timeout(5000),
     resolveTurn:(bot,thread)=>({bot,thread,requestId:'request-'+bot,active:true}),
-    host:{health:async()=>true,launch:async({job})=>({worker:job.worker}),
+    host:{admit:async()=>{},health:async()=>true,launch:async({job})=>({worker:job.worker}),
       execute:async({job,turnId,emit,pollPermission,acknowledgePermission})=>{
         peak=Math.max(peak,++active);if(active===2)release();await gate;
         const requestId='read-'+job.worker;
@@ -30,7 +30,7 @@ test('coordinator joins scoped planning, concurrent turns, permissions and host 
 test('coordinator never releases a desktop when host stop is unverified',async()=>{
   const c=createWorkerCoordinator({file:':memory:',assignments,pools,signal:AbortSignal.timeout(5000),
     resolveTurn:(bot,thread)=>({bot,thread,requestId:'request',active:true}),
-    host:{health:async()=>true,launch:async()=>({}),execute:async()=>({}),stop:async()=>{},inspectStopped:async()=>false}});
+    host:{admit:async()=>{},health:async()=>true,launch:async()=>({}),execute:async()=>({}),stop:async()=>{},inspectStopped:async()=>false}});
   try{
     const adapter=await c.bootstrap.createAdapter({instanceId:'workers',pool:'pool'});
     await adapter.sendTurn({botId:'bot-a',threadId:'thread',text:'Synthetic',approvalMode:'ask',mcpFromUserConfig:false,
@@ -39,4 +39,17 @@ test('coordinator never releases a desktop when host stop is unverified',async()
     assert.equal(c.ledger.db.prepare('SELECT state FROM jobs').get().state,'cancelling');
     assert.throws(()=>c.close(),/settlement/);
   }finally{c.ledger.close();}
+});
+test('remote host admission remains mandatory without a local engine callback',async()=>{
+  let admissions=0, launches=0;
+  const c=createWorkerCoordinator({file:':memory:',assignments,pools,signal:AbortSignal.timeout(5000),
+    resolveTurn:(bot,thread)=>({bot,thread,requestId:'request',active:true}),
+    host:{admit:async()=>{admissions++;throw Error('Host capacity exhausted');},health:async()=>true,
+      launch:async()=>{launches++;},execute:async()=>({}),stop:async()=>{},inspectStopped:async()=>true}});
+  try{
+    const adapter=await c.bootstrap.createAdapter({instanceId:'workers',pool:'pool'});
+    await adapter.sendTurn({botId:'bot-a',threadId:'thread',text:'Synthetic',approvalMode:'ask',mcpFromUserConfig:false,toolScope:{allow:['read']}});
+    const results=await c.drain();assert.equal(results[0].value.outcome,'failed');
+    assert.equal(admissions,1);assert.equal(launches,0);
+  }finally{c.close();}
 });
