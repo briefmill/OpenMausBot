@@ -23,7 +23,7 @@ export async function listenExecutionService({service,worker,assignment,authoriz
      typeof controllerToken!=='string' || controllerToken.length<32 || controllerToken.length>512 ||
      !exact(tls,['key','cert','ca','controllerPin']) || !/^[a-f0-9]{64}$/.test(tls.controllerPin) ||
      ![tls.key,tls.cert,tls.ca].every(value=>(typeof value==='string' || Buffer.isBuffer(value)) && value.length) ||
-     !['127.0.0.1','0.0.0.0'].includes(listenHost) || !validWorkerHost(advertisedHost) || advertisedHost==='0.0.0.0' ||
+     !['127.0.0.1','0.0.0.0','::'].includes(listenHost) || !validWorkerHost(advertisedHost) || advertisedHost==='0.0.0.0' ||
      !Number.isSafeInteger(port) || port<0 || port>65535 || !Number.isSafeInteger(deadlineMs) || deadlineMs<1 || deadlineMs>300000)
     throw Error('Pinned trusted execution service required');
   const policy=normalizeWorkerAssignment(assignment),tokenHash=digest(controllerToken),pin=Buffer.from(tls.controllerPin,'hex');

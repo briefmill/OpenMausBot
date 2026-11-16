@@ -16,7 +16,7 @@ function certificates(root){
   run(['req','-x509','-newkey','rsa:2048','-nodes','-keyout','ca.key','-out','ca.crt','-days','1','-subj','/CN=service-fixture']);
   for(const name of ['server','controller','outsider']){
     run(['req','-new','-newkey','rsa:2048','-nodes','-keyout',name+'.key','-out',name+'.csr','-subj','/CN='+name]);
-    writeFileSync(join(root,name+'.ext'),name==='server'?'subjectAltName=IP:127.0.0.1\nextendedKeyUsage=serverAuth':'extendedKeyUsage=clientAuth');
+    writeFileSync(join(root,name+'.ext'),name==='server'?'subjectAltName=IP:127.0.0.1,DNS:localhost\nextendedKeyUsage=serverAuth':'extendedKeyUsage=clientAuth');
     run(['x509','-req','-in',name+'.csr','-CA','ca.crt','-CAkey','ca.key','-CAcreateserial','-out',name+'.crt','-days','1','-extfile',name+'.ext']);
   }
   const peer=name=>({ca:readFileSync(join(root,'ca.crt')),key:readFileSync(join(root,name+'.key')),cert:readFileSync(join(root,name+'.crt'))});
@@ -78,4 +78,18 @@ test('service mTLS binds controller identity, assignments, consumed generations 
     await assert.rejects(bound.stop(task('uncertain').lease),/reconciliation/);
     await assert.rejects(controller.call('/v1/jobs/held/run',token,task('held')),/409/);
   }finally{for(const client of clients)client.close();await transport?.close();service.close();rmSync(root,{recursive:true,force:true});}
+});
+
+
+test('service listener accepts explicit dual-stack binding with named pinned TLS',async()=>{
+  const root=mkdtempSync(join(tmpdir(),'omb-service-ipv6-')),certs=certificates(root);
+  const service=createServiceExecution({file:':memory:',worker,execute:async()=>({result}),stop:async()=>{},inspectStopped:async()=>true});
+  let listener,client;
+  try{
+    listener=await listenExecutionService({service,worker,assignment,authorize:async()=>true,controllerToken:token,
+      listenHost:'::',advertisedHost:'localhost',tls:{...certs.peer('server'),controllerPin:certs.pin('controller')}});
+    client=createServiceClient({origin:listener.origin,worker,token,allowRemote:true,tls:{...certs.peer('controller'),serverPin:certs.pin('server')}});
+    const current=task('dual');const reply=await client.execute({...current,input:{botId:'bot',threadId:'thread',text:'synthetic'},signal:AbortSignal.timeout(2000)});
+    assert.equal(reply.result.ok,true);assert.equal(await client.inspectStopped(current.lease),true);
+  }finally{client?.close();await listener?.close();service.close();rmSync(root,{recursive:true,force:true});}
 });

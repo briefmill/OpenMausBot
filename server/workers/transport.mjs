@@ -26,7 +26,7 @@ async function jsonBody(req, limit = 70_000) {
 export async function listenTransport({ ledger, controllerToken, workers, leaseMs = 30_000, tls,
   listenHost='127.0.0.1',advertisedHost='127.0.0.1',port=0 }) {
   if(!Number.isSafeInteger(port) || port<0 || port>65535)throw Error('Invalid worker listener port');
-  if(!['127.0.0.1','0.0.0.0'].includes(listenHost) || !validWorkerHost(advertisedHost) || advertisedHost==='0.0.0.0' ||
+  if(!['127.0.0.1','0.0.0.0','::'].includes(listenHost) || !validWorkerHost(advertisedHost) || advertisedHost==='0.0.0.0' ||
      ((listenHost!=='127.0.0.1' || advertisedHost!=='127.0.0.1') && !tls))throw Error('Explicit mutual TLS remote binding required');
   workers = structuredClone(workers);
   if (tls) {

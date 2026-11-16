@@ -86,3 +86,22 @@ test('explicit named endpoint retains mutual TLS role binding and server pin che
   await assert.rejects(wrong.call('/v1/jobs/named',token),/pin mismatch/);
  }finally{for(const client of clients)client.close();await transport?.close();ledger.close();rmSync(dir,{recursive:true,force:true});}
 });
+
+test('explicit dual-stack event listener accepts pinned named TLS clients',async()=>{
+  const dir=mkdtempSync(join(tmpdir(),'maus-dual-mtls-')),ledger=new JobLedger(':memory:'),certs=certificates(dir);
+  let transport,client;
+  try{
+    transport=await listenTransport({ledger,controllerToken,workers:[],listenHost:'::',advertisedHost:'localhost',
+      tls:{...certs.peer('server'),controllerPin:certs.pin('controller'),workerPins:{}}});
+    client=tlsRequester(transport.origin,{...certs.peer('controller'),serverPin:certs.pin('server')},{allowRemote:true});
+    await client.call('/v1/jobs',controllerToken,{id:'dual',...assignment});
+    assert.equal((await client.call('/v1/jobs/dual',controllerToken)).job.id,'dual');
+    const response=await new Promise((resolve,reject)=>{
+      const req=request(transport.origin+'/v1/jobs/dual',{...certs.peer('controller'),agent:false,
+        lookup:(_host,options,callback)=>options.all?callback(null,[{address:'::1',family:6}]):callback(null,'::1',6),headers:{authorization:'Bearer '+controllerToken}},res=>{
+          let bytes='';res.on('data',chunk=>{bytes+=chunk;});res.on('end',()=>resolve({status:res.statusCode,body:JSON.parse(bytes)}));
+        });req.on('error',reject);req.end();
+    });
+    assert.equal(response.status,200);assert.equal(response.body.job.id,'dual');
+  }finally{client?.close();await transport?.close();ledger.close();rmSync(dir,{recursive:true,force:true});}
+});
