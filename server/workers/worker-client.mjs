@@ -29,6 +29,15 @@ export function workerClient({ origin, token, heartbeatMs = 1000, pollMs = 50, t
   };
   return {
     close: () => secure?.close(),
+    async verifyLease({jobId,lease,signal}) {
+      safeId(jobId);
+      const {job}=await call(`/v1/jobs/${jobId}`,undefined,signal);
+      if(!lease || lease.id!==jobId || lease.worker!==job.worker || lease.generation!==job.generation || job.state!=='running' ||
+         typeof lease.token!=='string' || !/^[a-f0-9]{64}$/.test(lease.token))throw Error('Invalid controller-owned worker lease');
+      const state=await call(`/v1/jobs/${jobId}/heartbeat`,{generation:lease.generation,token:lease.token},signal);
+      if(state.cancellationRequested)throw Error('Worker lease cancelled before provider construction');
+      return structuredClone(job);
+    },
     async run({ jobId, adapter, input, signal, lease: suppliedLease }) {
       safeId(jobId);
       const { job } = await call(`/v1/jobs/${jobId}`, undefined, signal);

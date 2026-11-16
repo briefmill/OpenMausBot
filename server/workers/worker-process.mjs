@@ -29,7 +29,7 @@ export async function runWorkerProcess({bootstrapFile,deadlineMs,stdin=process.s
     const task=await readWorkerTask(stdin,control.signal);
     const module=await import(pathToFileURL(bootstrapFile).href);
     if(typeof module.bootstrap!=='function')throw Error('Worker bootstrap unavailable');
-    host=await module.bootstrap({signal:control.signal});
+    host=await module.bootstrap({signal:control.signal,task:structuredClone(task)});
     if(typeof host?.runtime?.run!=='function' || typeof host.close!=='function')throw Error('Worker bootstrap invalid');
     control.signal.throwIfAborted();
     const execution=await host.runtime.run(task,control.signal),result=execution?.result;
