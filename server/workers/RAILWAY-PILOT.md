@@ -14,7 +14,7 @@ Evidence lives in C:\Users\lL0xt\OneDrive\Documents\ManusBot\worker-execution-ca
 
 ## Software gates before hosted acceptance
 
-- Compare the candidate with the customized release and preserve existing approval, annotation, dictation, account-binding and UI fixes. The candidate's upstream base alone does not prove customized release parity.
+- The identified customized checkout overlay is integrated and tested as af003d478. Its original checkout stays untouched. Review any separate feature worktrees and deployed desktop differences before promotion; the production package version is still unverified.
 - Finish built-in connected-app saved grants and full Codex tool-result acceptance. Configured custom MCP read grants already pass source/packaged new-chat and restart tests; separate synthetic sends still require approval.
 - Qualify the pinned worker image with the chosen provider CLI and isolated authentication. The package manifest still reports productionReady false. No production credential copy or paid model turn follows from local tests.
 - Verify encrypted backup/restore for each worker's workspace and authority state, including old-generation refusal after restore.
