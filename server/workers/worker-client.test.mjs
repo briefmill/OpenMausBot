@@ -31,7 +31,8 @@ test('provider permission travels over HTTP to controller before any action', as
     async interruptTurn() { emit({ type: 'turn.completed', ok: false }); },
     async respondToRequest(thread, id, decision) {
       responses++; if (decision.behavior === 'allow') actions++;
-      emit({ type: 'turn.completed', ok: true }); return 'rejected';
+      emit({ type:'item.completed',itemType:'assistant_text',text:'Synthetic send denied; no message sent.' });
+      emit({ type: 'turn.completed', ok: true, cost:null,usage:{input:11,output:5} }); return 'rejected';
     },
   };
   const controller = async (path, body) => {
@@ -63,6 +64,10 @@ test('provider permission travels over HTTP to controller before any action', as
     const display = ledger.db.prepare('SELECT body FROM events WHERE job=?').all('one').map(r => r.body).join('');
     assert.equal(display.includes('private-command'), false);
     assert.equal(display.includes('private-raw'), false);
+    const replay = await controller('/v1/jobs/one/events');
+    assert.equal(replay.events.find(row=>row.event.itemType==='assistant_text').event.text,'Synthetic send denied; no message sent.');
+    const terminal=replay.events.find(row=>row.event.type==='turn.completed').event;
+    assert.equal(terminal.cost,null);assert.deepEqual(terminal.usage,{input:11,output:5});
     assert.equal(ledger.get('one').state, 'running'); // Delivery still awaits artifact verification.
   } finally {
     abort.abort(); await running?.catch(() => {}); clearTimeout(timeout);

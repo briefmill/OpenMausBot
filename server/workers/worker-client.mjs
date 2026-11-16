@@ -1,6 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { runProviderTurn } from './provider-runner.mjs';
 import { tlsRequester } from './tls-request.mjs';
+import { workerEventForController } from './event-wire.mjs';
 
 const safeId = value => {
   if (typeof value !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/.test(value)) throw Error('Invalid job identity');
@@ -8,9 +9,6 @@ const safeId = value => {
 };
 // Internal runtime requests keep permission evidence. Durable progress events
 // carry only this display-safe subset, without raw protocol or shell arguments.
-const displayEvent = event => Object.fromEntries([
-  'eventId', 'type', 'threadId', 'turnId', 'requestId', 'provider', 'ok', 'requestType',
-].filter(key => event[key] !== undefined).map(key => [key, event[key]]));
 
 export function workerClient({ origin, token, heartbeatMs = 1000, pollMs = 50, tls }) {
   if (!/^https?:\/\/127\.0\.0\.1:\d+$/.test(origin)) throw Error('Loopback transport required');
@@ -50,7 +48,7 @@ export function workerClient({ origin, token, heartbeatMs = 1000, pollMs = 50, t
       const result = await runProviderTurn({ adapter, input, signal, heartbeatMs,
         onRequestOutcome: (event, outcome) => call(`/v1/jobs/${jobId}/requests/${safeId(event.requestId)}/ack`, { ...auth, outcome }, signal),
         checkLease: () => call(`/v1/jobs/${jobId}/heartbeat`, auth, signal),
-        forwardEvent: event => call(`/v1/jobs/${jobId}/events`, { ...auth, seq: ++seq, event: displayEvent(event) }, signal),
+        forwardEvent: event => call(`/v1/jobs/${jobId}/events`, { ...auth, seq: ++seq, event: workerEventForController(event) }, signal),
         decidePermission: async event => {
           safeId(event.requestId);
           const { raw, ...request } = event;
