@@ -18,10 +18,10 @@ export function bindWorkerPermissions({ ledger, jobId, generation, botId, thread
       const answer = { behavior: decision?.behavior, ...(decision?.message === undefined ? {} : { message: decision.message }) };
       ledger.decideRequest(jobId, generation, requestId, answer);
       const deadline = Date.now() + deliveryMs;
-      while (current() && Date.now() < deadline) {
+      while (Date.now() < deadline) {
         const delivered = ledger.requestDelivery(jobId, generation, requestId);
         if (delivered.outcome && delivered.outcome !== 'unavailable') return delivered.outcome;
-        if (delivered.outcome === 'unavailable') break;
+        if (delivered.outcome === 'unavailable' || !current()) break;
         await pause(pollMs);
       }
       // A recorded allow without a delivery acknowledgement is uncertain.

@@ -12,7 +12,7 @@ export function createWorkerAdapter({ provider, submit, cancel, answer, capabili
     hasSession() { return false; },
     async sendTurn(input) {
       if (active.has(input.threadId)) throw Error('Thread already owns a worker turn');
-      const binding = { turnId: null, pending: new Set(), answering: new Set(), buffered: [], overflow: false }; active.set(input.threadId, binding);
+      const binding = { turnId: null, pending: new Set(), answering: new Set(), deliveries: new Set(), buffered: [], overflow: false }; active.set(input.threadId, binding);
       const publish = event => {
         if (binding.turnId !== event.turnId) return;
         if (event.type === 'request.opened') binding.pending.add(event.requestId);
@@ -37,8 +37,9 @@ export function createWorkerAdapter({ provider, submit, cancel, answer, capabili
         binding.buffered.length = 0;
         // completion means host-stop verification and artifact settlement, not
         // merely a provider terminal event. Do not free the thread on events.
-        binding.completion = Promise.resolve(started.completion).then(result => {
+        binding.completion = Promise.resolve(started.completion).then(async result => {
           if (result?.settled !== true) throw Error('Worker settlement unverified');
+          await Promise.allSettled([...binding.deliveries]);
           if (active.get(input.threadId) === binding) active.delete(input.threadId);
           return result;
         });
@@ -55,12 +56,14 @@ export function createWorkerAdapter({ provider, submit, cancel, answer, capabili
       const binding = active.get(threadId);
       if (!binding || !binding.turnId || !binding.pending.has(requestId) || binding.answering.has(requestId) || decision?.always === true) return 'unavailable';
       binding.answering.add(requestId);
+      const delivery = Promise.resolve().then(() => answer({ threadId, turnId: binding.turnId, requestId, decision }));
+      binding.deliveries.add(delivery);
       try {
-        const outcome = await answer({ threadId, turnId: binding.turnId, requestId, decision });
+        const outcome = await delivery;
         if (active.get(threadId) !== binding) return 'unavailable';
         if (['allowed-once', 'rejected', 'answered'].includes(outcome)) binding.pending.delete(requestId);
         return outcome;
-      } finally { binding.answering.delete(requestId); }
+      } finally { binding.answering.delete(requestId); binding.deliveries.delete(delivery); }
     },
     async interruptTurn(threadId, turnId) {
       const binding = active.get(threadId);
