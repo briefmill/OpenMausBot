@@ -150,3 +150,16 @@ test('uploaded artifacts cannot authorize HTTP resource release', async t => {
   f.ledger.enqueue({ id:'competing', ...assignment });
   assert.equal(f.ledger.claim('competing','worker2',1000), null);
 });
+test('controller reads ordered event history with a cursor; workers cannot read it',async t=>{
+  const f=await setup(t);await f.call('/v1/jobs',f.controller,{id:'one',...assignment});
+  const {body:{lease}}=await f.call('/v1/jobs/one/claim',f.worker,{});
+  const auth={generation:lease.generation,token:lease.token};
+  for(let seq=1;seq<=3;seq++)assert.equal((await f.call('/v1/jobs/one/events',f.worker,{...auth,seq,event:{type:'progress',step:seq}})).status,200);
+  const page=await f.call('/v1/jobs/one/events',f.controller,undefined,{'x-after-seq':'1'});
+  assert.equal(page.status,200);assert.deepEqual(page.body.events.map(x=>x.seq),[2,3]);assert.equal(page.body.lastSeq,3);
+  assert.equal((await f.call('/v1/jobs/one/events',f.worker)).status,403);
+  assert.equal((await f.call('/v1/jobs/one/events',f.controller,undefined,{'x-after-seq':'-1'})).status,400);
+  assert.equal((await f.call('/v1/jobs/one/events',f.controller,undefined,{'x-after-seq':'9007199254740992'})).status,400);
+  assert.deepEqual(f.ledger.readEvents('one',0,1).events.map(x=>x.seq),[1]);
+  assert.equal(f.ledger.readEvents('one',0,1).hasMore,true);
+});

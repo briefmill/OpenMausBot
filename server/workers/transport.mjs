@@ -80,6 +80,13 @@ export async function listenTransport({ ledger, controllerToken, workers, leaseM
         if (!assigned || (job.worker && job.worker !== principal.id)) throw denied(403, 'Forbidden');
       }
       if (req.method === 'GET' && !action) return send(200, { job });
+      if (req.method === 'GET' && action === 'events') {
+        if (principal.role !== 'controller') throw denied(403, 'Forbidden');
+        const cursor = req.headers['x-after-seq'] ?? '0';
+        if (typeof cursor !== 'string' || !/^(0|[1-9][0-9]{0,15})$/.test(cursor) || !Number.isSafeInteger(Number(cursor)))
+          throw denied(400, 'Invalid event cursor');
+        return send(200,ledger.readEvents(id,Number(cursor)));
+      }
       if (req.method === 'GET' && action === 'requests' && !requestId) {
         if (principal.role !== 'controller') throw denied(403, 'Forbidden');
         return send(200, { requests: ledger.pendingRequests(id) });

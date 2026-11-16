@@ -223,6 +223,19 @@ export class JobLedger {
       return { acknowledged: seq, replay: false };
     });
   }
+  readEvents(id, afterSeq = 0, limit = 100) {
+    const job = this.get(id);
+    if (!Number.isSafeInteger(afterSeq) || afterSeq < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+      throw Error('Invalid event cursor');
+    const rows = this.db.prepare('SELECT seq,body FROM events WHERE job=? AND seq>? ORDER BY seq LIMIT ?').all(id,afterSeq,limit + 1);
+    const events = []; let bytes = 0;
+    for (const row of rows.slice(0,limit)) {
+      const size = Buffer.byteLength(row.body);
+      if (bytes + size > 1024 * 1024) break;
+      bytes += size; events.push({ seq:row.seq,event:JSON.parse(row.body) });
+    }
+    return { generation:job.generation, events, lastSeq:events.at(-1)?.seq ?? afterSeq, hasMore:rows.length > events.length };
+  }
   cancel(id) {
     return this.transaction(() => {
       const job = this.get(id);
