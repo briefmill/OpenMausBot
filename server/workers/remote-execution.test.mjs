@@ -6,6 +6,7 @@ import { createRemoteExecution } from './remote-execution.mjs';
 import { listenTransport } from './transport.mjs';
 import { workerClient } from './worker-client.mjs';
 import { JobLedger } from './ledger.mjs';
+import { createBoundWorkerRuntime } from './worker-runtime.mjs';
 
 test('remote bridge withholds terminal publication for a mismatched lease receipt',async()=>{
   const ledger=new JobLedger(':memory:');
@@ -60,7 +61,10 @@ test('coordinator executes worker HTTP stream and preserves native permission id
       id:'worker',token,capacity:1,assignments:[{bot:'bot',thread:'thread',project:'project',resource:'desktop',resources:['workspace']}]}]});
     client=workerClient({origin:transport.origin,token,pollMs:1});
     execute=createRemoteExecution({ledger:c.ledger,pollMs:1,executeWorker:({job,lease,input,signal})=>
-      client.run({jobId:job.id,lease,adapter:native,input:{...input,approvalModeNow:()=> 'ask',engineAdmission:async()=>{}},signal})});
+      createBoundWorkerRuntime({client,adapter:native,
+        binding:{jobId:job.id,worker:lease.worker,generation:lease.generation,botId:job.bot,threadId:job.thread},
+        input:{...input,cwd:process.cwd(),approvalModeNow:()=> 'ask',engineAdmission:async()=>{}}})
+        .run({jobId:job.id,lease,content:{text:input.text}},signal)});
     const adapter=await c.bootstrap.createAdapter({instanceId:'remote',pool:'pool'}),events=[],answers=[];
     adapter.onEvent(event=>{events.push(event);if(event.type==='request.opened'){
       assert.equal(event.tool,'scoped-read');assert.equal(event.raw,undefined);
