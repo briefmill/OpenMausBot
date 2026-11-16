@@ -1,3 +1,4 @@
+import { redactSecretsInText } from '../redact.ts';
 export function bindWorkerReplies({ store, commandReceipt, getJob, jobId, generation, redactText }) {
   if (![commandReceipt,getJob,redactText].every(value => typeof value === 'function') ||
       typeof jobId !== 'string' || !Number.isSafeInteger(generation) || generation < 1) throw Error('Trusted reply destination required');
@@ -8,8 +9,9 @@ export function bindWorkerReplies({ store, commandReceipt, getJob, jobId, genera
     if (!Number.isSafeInteger(seq) || seq < 1) throw Error('Invalid reply sequence');
     if (event.type !== 'item.completed' || event.itemType !== 'assistant_text') return { delivered:false };
     if (typeof event.text !== 'string' || !event.text.trim()) throw Error('Worker reply text required');
-    const text = redactText(event.text);
-    if (typeof text !== 'string' || !text.trim()) throw Error('Redacted worker reply text required');
+    const redacted = redactText(event.text);
+    if (typeof redacted !== 'string' || !redacted.trim()) throw Error('Redacted worker reply text required');
+    const text = redactSecretsInText(redacted);
     const command = { kind:'worker.reply',key:JSON.stringify([job.id,generation,seq,job.bot,job.thread]) };
     const previous = commandReceipt(command.kind,command.key);
     if (previous) {

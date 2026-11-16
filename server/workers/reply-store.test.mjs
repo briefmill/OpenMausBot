@@ -24,6 +24,11 @@ test('actual Store reply receipt survives reopen without duplicate or foreign pu
     assert.equal(store.messagesFor(bot.threadId).find(message=>message.id===first.reportId).text,'Report [redacted]');
     assert.throws(()=>bind()({...row,event:{...row.event,text:'Changed report'}}),/Conflicting/);
     assert.throws(()=>bind()({...row,event:{...row.event,threadId:other.threadId}}),/foreign/);
+    const credentialText='Report sk-synthetic0123456789abcdefghijklmnop';
+    const credentialRow={seq:3,event:{...row.event,text:credentialText}};
+    const scrubbed=bind()(credentialRow),scrubbedReplay=bind()(credentialRow);
+    assert.equal(scrubbedReplay.reportId,scrubbed.reportId);assert.equal(scrubbedReplay.recovered,true);
+    assert.notEqual(store.messagesFor(bot.threadId).find(message=>message.id===scrubbed.reportId).text,credentialText);
     job.generation=2;assert.throws(()=>bind()(row),/Stale/);closeMessageDb();
     console.log(JSON.stringify({actualStore:true,reopenReplay:true,replyCopies:1,foreignThreadDenied:true,changedReplayDenied:true,redactionApplied:true}));
   `;
