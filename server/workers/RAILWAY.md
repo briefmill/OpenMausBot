@@ -121,3 +121,11 @@ Fifty-two tracked files match the customization snapshot. MCP tools and server s
 The combined candidate passes server/client typechecks, the UI build, server/worker packaging, packaged server smoke, 176 worker tests and 344 focused customization tests across 16 files. Source and packaged full-app fixtures also pass again: six account reads over new chats/restart, separate denied send cards, eight settled jobs and cleanup. Tests cover approval persistence/UI store, picker helpers, dictation/call UI, memory privacy, audit and resource protections. These checks do not establish live model authentication, 34 hosted environments, or parity with every other feature worktree or deployed desktop byte.
 
 Offline recovery update: worker-backup-qualification/proof.json verifies authenticated encrypted roundtrip, wrong-password/tamper refusal, checkpoint and consumed-generation persistence, foreign-binding rejection and fresh-job execution. The image and fixture hashes come from the runner. This uses a separate backup-admin role, not added worker privileges, and does not qualify automatic recovery or post-snapshot job reconciliation. See RECOVERY.md.
+
+## Native provider runtime qualification
+
+Dockerfile.worker-provider pins Claude 2.1.326 and Codex 0.169.0 on the pinned Node 24 base. Local startup and real control-protocol initialization pass without network access, credentials or user prompts, as UID 1000 with all capabilities dropped and read-only root. Evidence lives at C:\Users\lL0xt\OneDrive\Documents\ManusBot\worker-execution-candidate\provider-runtime\.
+
+Set the trusted service environment HOME to a worker-owned directory on its identity-bound persistent workspace, outside /tmp. Provide writable temporary storage such as a bounded /tmp tmpfs. Codex fails SQLite state migration when temporary storage is read-only; placing HOME under /tmp also prevents its helper aliases. The offline fixtures use /home/node to check path behavior, not to establish volume persistence. Service environment replaces inherited variables, so set PATH and HOME explicitly. Preserve root-only authority and configuration outside this home.
+
+Neither provider has authenticated in this candidate. Protocol initialization does not prove model access, account policy, resume continuity or rate-limit capacity. The package remains productionReady false.
