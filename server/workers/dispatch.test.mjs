@@ -1,0 +1,64 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { JobLedger } from './ledger.mjs';
+import { createDispatcher } from './dispatch.mjs';
+const job = (id, resource = 'desktop:a') => ({ id, bot: 'bot', thread: id, project: 'project', resource });
+test('resource remains exclusive until authoritative host stop', async () => {
+  const ledger = new JobLedger(':memory:');
+  try {
+    ledger.enqueue(job('a')); ledger.enqueue(job('b'));
+    let release; const gate = new Promise(resolve => release = resolve);
+    let stopping; const reachedStop = new Promise(resolve => stopping = resolve);
+    const dispatcher = createDispatcher({ ledger, launch: async () => 'handle', execute: async () => ({ useful: true }),
+      stop: async () => { stopping(); await gate; }, inspectStopped: async () => true });
+    const pending = dispatcher.dispatch('a', 'worker-a'); await reachedStop;
+    assert.equal(ledger.claim('b', 'worker-b', 1000), null);
+    release(); assert.equal((await pending).outcome, 'completed');
+    assert.ok(ledger.claim('b', 'worker-b', 1000));
+  } finally { ledger.close(); }
+});
+test('partial launch failure with uncertain stop holds resources', async () => {
+  const ledger = new JobLedger(':memory:');
+  try {
+    ledger.enqueue(job('a')); ledger.enqueue(job('b'));
+    let stoppedIdentity;
+    const dispatcher = createDispatcher({ ledger, launch: async () => { throw Error('partially created'); }, execute: async () => {},
+      stop: async identity => { stoppedIdentity = identity; }, inspectStopped: async () => false });
+    assert.equal((await dispatcher.dispatch('a', 'worker-a')).settled, false);
+    assert.equal(stoppedIdentity.id, 'a'); assert.equal(stoppedIdentity.generation, 1);
+    assert.equal(ledger.get('a').state, 'cancelling'); assert.equal(ledger.claim('b', 'worker-b', 1000), null);
+  } finally { ledger.close(); }
+});
+test('separate resources execute concurrently, replay cannot relaunch a job', async () => {
+  const ledger = new JobLedger(':memory:');
+  try {
+    ledger.enqueue(job('a')); ledger.enqueue(job('b', 'desktop:b'));
+    let active = 0, peak = 0, release; const gate = new Promise(resolve => release = resolve);
+    const dispatcher = createDispatcher({ ledger, launch: async () => ({}), execute: async () => {
+      peak = Math.max(peak, ++active); if (active === 2) release(); await gate; active--; return 'done';
+    }, stop: async () => {}, inspectStopped: async () => true });
+    const results = await Promise.all([dispatcher.dispatch('a', 'worker-a'), dispatcher.dispatch('b', 'worker-b')]);
+    assert.equal(peak, 2); assert.ok(results.every(x => x.outcome === 'completed'));
+    await assert.rejects(dispatcher.dispatch('a', 'worker-a'), /not queued/);
+  } finally { ledger.close(); }
+});
+test('stop deadline leaves resource held even if a host call hangs', async () => {
+  const ledger = new JobLedger(':memory:');
+  try {
+    ledger.enqueue(job('a')); ledger.enqueue(job('b'));
+    const dispatcher = createDispatcher({ ledger, launch: async () => ({}), execute: async () => 'done',
+      stop: () => new Promise(() => {}), inspectStopped: async () => true, stopMs: 10 });
+    assert.equal((await dispatcher.dispatch('a', 'worker-a')).settled, false);
+    assert.equal(ledger.claim('b', 'worker-b', 1000), null);
+  } finally { ledger.close(); }
+});
+test('cancellation during execution settles only after host stop', async () => {
+  const ledger = new JobLedger(':memory:');
+  try {
+    ledger.enqueue(job('a')); let stopped = false;
+    const dispatcher = createDispatcher({ ledger, launch: async () => ({}), execute: async () => { ledger.cancel('a'); return 'partial'; },
+      stop: async () => { stopped = true; }, inspectStopped: async () => stopped });
+    assert.equal((await dispatcher.dispatch('a', 'worker-a')).outcome, 'cancelled');
+    assert.equal(stopped, true);
+  } finally { ledger.close(); }
+});
