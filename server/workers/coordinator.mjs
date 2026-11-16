@@ -3,6 +3,7 @@ import { createJobPlanner } from './job-planner.mjs';
 import { createDispatcher } from './dispatch.mjs';
 import { createWorkerAdapter } from './controller-adapter.mjs';
 import { bindWorkerPermissions } from './controller-permissions.mjs';
+import { isDeepStrictEqual } from 'node:util';
 
 export function createWorkerCoordinator({ file, assignments, resolveTurn, pools, host, signal }) {
   if (!signal || !['admit','launch','execute','stop','inspectStopped','health'].every(key => typeof host?.[key] === 'function')) {
@@ -36,7 +37,12 @@ export function createWorkerCoordinator({ file, assignments, resolveTurn, pools,
         emit:event => {
           if (event.threadId !== job.thread || event.turnId !== context.turnId || contexts.get(job.id) !== context) return;
           if (event.type === 'request.opened') {
-            const { raw, ...request } = event; ledger.openRequest(lease,request);
+            const { raw, ...request } = event;
+            const existing = ledger.pendingRequests(job.id).find(row => row.requestId === request.requestId);
+            if (existing) {
+              if (existing.generation !== lease.generation || !isDeepStrictEqual({...existing.request,turnId:context.turnId},request))
+                throw Error('Remote permission identity mismatch');
+            } else ledger.openRequest(lease,request);
           }
           context.emit(event);
         },
