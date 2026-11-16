@@ -2449,14 +2449,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 const owner = bot?.tasks?.some((task) => task.threadId === action.threadId);
                 const next = [...new Set([...(bot ? currentTaskBot(bot, action.threadId).alwaysAllow ?? [] : []), action.alwaysAllow.key])];
                 // Save the grant BEFORE releasing the bot: it may ask again within milliseconds.
-                try {
-                  await api(owner ? `/api/bots/${action.alwaysAllow.botId}/always-allow` : `/api/bots/${action.alwaysAllow.botId}`, {
-                    method: owner ? "POST" : "PATCH",
-                    body: JSON.stringify(owner ? { threadId: action.threadId, allowKey: action.alwaysAllow.key } : { alwaysAllow: next }),
-                  });
-                } catch (error) {
-                  showError(error);
-                }
+                await api(owner ? `/api/bots/${action.alwaysAllow.botId}/always-allow` : `/api/bots/${action.alwaysAllow.botId}`, {
+                  method: owner ? "POST" : "PATCH",
+                  body: JSON.stringify(owner ? { threadId: action.threadId, allowKey: action.alwaysAllow.key } : { alwaysAllow: next }),
+                });
               }
               const response = await respond();
               if (response?.settlementPending && typeof response.message === "string") {

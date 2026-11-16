@@ -1,3 +1,4 @@
+import { workspaceAccountBinding } from "../hosted-workspace-policy.ts";
 // The proactive main agent, wired from ordinary routines: the checks a routine runs before any AI turn, the
 // read-and-draft fence its runs work inside, the brief its results become, and the proactive bot's default "Keep an eye
 // on my day" routine, created once with no button on a personal install or a personal Cloud that can reach connected
@@ -113,6 +114,7 @@ export function createProactive(deps: ProactiveDeps) {
   function mayRead(botId: string, app: ReadApp): boolean {
     const bot = store.bot(botId);
     if (!bot || bot.composio === false || !composio.configured(cfg)) return false;
+    if (workspaceAccountBinding(bot)) return false;
     const slug = READ_SLUG[app];
     return connectorAccessDecision(bot.connectorScopes, [{ slug }], [...READ_APPS]).ok && evaluateConnectorTools([slug], bot.connectorTools, [...READ_APPS]).allowed;
   }

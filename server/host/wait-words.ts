@@ -1,5 +1,5 @@
 import type { HandoffView } from "../coordinator.ts";
-import type { EngineWaits } from "../engine-memory.ts";
+import { processWaitText, type EngineWaits } from "../engine-memory.ts";
 import { serverLine } from "../server-lines.ts";
 import type { SteerQueueReason } from "../../shared/wire.ts";
 import type { QueuedReasonDeps } from "./queued-reason.ts";
@@ -18,15 +18,16 @@ export interface WaitWordsDeps {
 
 export function createWaitWords(deps: WaitWordsDeps): EngineWaits & { queued(threadId: string, reason: SteerQueueReason | undefined): string | undefined } {
   return {
-    text(threadId, { first, running, ahead, limit }) {
+    text(threadId, { first, running, ahead, limit, processes }) {
       const language = deps.language(threadId);
       if (limit !== undefined) return serverLine(language, first ? "server.planTurns.wait" : "server.planTurns.still", { limit, ahead });
+      if (processes) return processWaitText(processes);
       if (!first) return serverLine(language, "server.memory.still", { running, ahead });
       const wait = serverLine(language, "server.memory.wait", { running, ahead });
       return deps.starter() ? `${wait} ${serverLine(language, "server.memory.starter")}` : wait;
     },
-    began(threadId, { running, ahead, limit }) {
-      deps.held(threadId, limit !== undefined ? `plan: ${limit} at once, ${ahead} ahead` : `memory: ${running} running, ${ahead} ahead${deps.starter() ? ", on Starter" : ""}`);
+    began(threadId, { running, ahead, limit, processes }) {
+      deps.held(threadId, limit !== undefined ? `plan: ${limit} at once, ${ahead} ahead` : processes ? `processes: ${processes.available} available of ${processes.limit}, ${ahead} ahead` : `memory: ${running} running, ${ahead} ahead${deps.starter() ? ", on Starter" : ""}`);
     },
     changed: deps.changed,
     queued(threadId, reason) {

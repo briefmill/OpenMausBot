@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { TurnNotStartedError, type ProviderInstance, type RuntimeEvent, type RuntimeEventListener, type SendTurnInput } from "./contracts.ts";
 import {
-  BOT_TURN_GIVES_WAY_MS, BROWSER_BYTES, CHAT_RUNTIME_KINDS, EngineMemory, memoryStallText, memoryStillWaitingText, memoryStopped, memoryStopText, memoryWaitText, PressureLedger, processGroupBytes, readHostMemory,
+  BOT_TURN_GIVES_WAY_MS, BROWSER_BYTES, CHAT_RUNTIME_KINDS, EngineMemory, memoryStallText, memoryStillWaitingText, memoryStopped, memoryStopText, memoryWaitText, PressureLedger, processGroupBytes, processGroupTasks, readHostMemory,
   withEngineMemory, type HostMemory,
 } from "./engine-memory.ts";
 import { OOM_SCORE, protectSupervisor, spawnBotWork, spawnWithOomScore } from "./oom-score.ts";
@@ -600,8 +600,8 @@ describe("an engine's adapter on a Cloud home", () => {
     h.state.available = 50 * MB;
     h.memory.tick();
     await settle();
-    fake.emit({ threadId: "b", turnId: "tb", type: "runtime.error", message: "opencodeGo exited null before the prompt result" });
-    fake.emit({ threadId: "b", turnId: "tb", type: "turn.completed", ok: false, stopReason: "exit_before_result" });
+    fake.emit({ threadId: "b", turnId: "turn-b", type: "runtime.error", message: "opencodeGo exited null before the prompt result" });
+    fake.emit({ threadId: "b", turnId: "turn-b", type: "turn.completed", ok: false, stopReason: "exit_before_result" });
     await settle();
     expect(seen.map((event) => event.type === "runtime.error" ? event.message : event.type)).toEqual([
       `${memoryStopText(false)} (opencodeGo exited null before the prompt result)`, "turn.completed"]);
@@ -610,7 +610,7 @@ describe("an engine's adapter on a Cloud home", () => {
     // An engine that ends its turn without an error of its own: the reason comes first.
     h.oomKill();
     h.children.get(1000)!.exit("SIGKILL");
-    fake.emit({ threadId: "a", turnId: "ta", type: "turn.completed", ok: false, stopReason: "exit_before_result" });
+    fake.emit({ threadId: "a", turnId: "turn-a", type: "turn.completed", ok: false, stopReason: "exit_before_result" });
     expect(seen.slice(2).map((event) => event.type === "runtime.error" ? event.message : event.type)).toEqual([memoryStopText(false), "turn.completed"]);
   });
 
@@ -961,4 +961,123 @@ describe("a lane of its own", () => {
   it("is always open with the gate off", () => {
     expect(new EngineMemory({ enabled: false }).laneHasRoom()).toBe(true);
   });
+});
+
+it("reports sampled process-group peaks once per run and marks shared engines", async () => {
+  let bytes = 400 * MB;
+  const logs: string[] = [];
+  const memory = new EngineMemory({ enabled: true, tickMs: 60_000, read: () => ({ totalBytes: 8 * GB, availableBytes: 6 * GB, swapFreeBytes: 0, oomKills: 0, fullStall10: 0 }), groups: () => new Map([[9991, bytes]]), log: line => logs.push(line) });
+  const child = new FakeChild(9991);
+  memory.within("first", () => memory.track(child as unknown as ChildProcess));
+  memory.useCap({ most: () => 6, waitsOnOthers: () => false });
+  await memory.admit("first", new AbortController().signal, () => {}, "turn");
+  memory.turnStarted("first");
+  memory.tick();
+  memory.attach(child as unknown as ChildProcess, "second");
+  memory.turnStarted("second");
+  bytes = 900 * MB;
+  memory.tick();
+  bytes = 200 * MB;
+  memory.turnEnded("first");
+  memory.turnEnded("first");
+  memory.turnEnded("second");
+  child.exit("SIGTERM");
+  const reports = logs.filter(line => line.startsWith("run-memory ")).map(line => JSON.parse(line.slice(11)));
+  expect(reports).toMatchObject([
+    { threadId: "first", sampledProcessGroupPeakBytes: 900 * MB, sharedProcess: true },
+    { threadId: "second", sampledProcessGroupPeakBytes: 900 * MB, sharedProcess: true },
+  ]);
+});
+
+describe("process/thread launch admission", () => {
+  const roomy = (availableTasks: number, taskLimit = 1000): HostMemory => ({
+    totalBytes: 64 * GB, availableBytes: 60 * GB, swapFreeBytes: 0,
+    oomKills: 0, fullStall10: 0, taskLimit, availableTasks,
+  });
+  it("waits on PID pressure despite free RAM and resumes when task slots return", async () => {
+    let slots = 120;
+    const memory = new EngineMemory({ enabled: true, tickMs: 5, read: () => roomy(slots), groups: () => new Map(), taskGroups: () => new Map() });
+    const abort = new AbortController(), notices: string[] = [];
+    let admitted = false;
+    const pending = memory.admit("worker", abort.signal, note => notices.push(note)).then(value => admitted = value);
+    try {
+      await expect.poll(() => notices.length).toBeGreaterThan(0);
+      expect(admitted).toBe(false);
+      expect(notices[0]).toContain("process/thread capacity");
+      slots = 300;
+      await expect.poll(() => admitted).toBe(true);
+      expect(await pending).toBe(true);
+    } finally { abort.abort(); await pending; memory.turnEnded("worker"); }
+  });
+  it("reserves startup task slots before another process can launch", async () => {
+    const memory = new EngineMemory({ enabled: true, tickMs: 5, read: () => roomy(200), groups: () => new Map(), taskGroups: () => new Map() });
+    const abort = new AbortController(), notices: string[] = [];
+    expect(await memory.admit("first", abort.signal, () => {})).toBe(true);
+    let admitted = false;
+    const pending = memory.admit("second", abort.signal, note => notices.push(note)).then(value => admitted = value);
+    try {
+      await expect.poll(() => notices.length).toBeGreaterThan(0);
+      expect(admitted).toBe(false);
+      memory.turnEnded("first");
+      await expect.poll(() => admitted).toBe(true);
+      expect(await pending).toBe(true);
+    } finally { abort.abort(); await pending; memory.turnEnded("first"); memory.turnEnded("second"); }
+  });
+  it("admits 34 independent starts when memory and task capacity both fit", async () => {
+    const memory = new EngineMemory({ enabled: true, read: () => roomy(4000, 5000), groups: () => new Map(), taskGroups: () => new Map() });
+    const abort = new AbortController();
+    try {
+      for (let index = 0; index < 34; index++) expect(await memory.admit(`worker-${index}`, abort.signal, () => {})).toBe(true);
+    } finally {
+      abort.abort();
+      for (let index = 0; index < 34; index++) memory.turnEnded(`worker-${index}`);
+    }
+  });
+});
+
+it("counts thread slots by process group while ignoring vanished and malformed processes", () => {
+  const files: Record<string, string> = {
+    "/proc/100/stat": "100 (engine (worker)) S 1 100 100",
+    "/proc/100/status": "Name:\tengine\nThreads:\t12\n",
+    "/proc/101/stat": "101 (mcp helper) S 1 100 100",
+    "/proc/101/status": "Threads:\t8\n",
+    "/proc/200/stat": "200 (chrome) S 1 200 200",
+    "/proc/200/status": "Threads:\t30\n",
+    "/proc/300/stat": "malformed",
+    "/proc/300/status": "Threads:\t5\n",
+  };
+  const result = processGroupTasks(() => ["100", "101", "200", "300", "999", "self"], path => {
+    if (!(path in files)) throw new Error("ENOENT");
+    return files[path]!;
+  });
+  expect([...result]).toEqual([[100, 20], [200, 30]]);
+});
+
+it("resets sampled memory peaks between consecutive turns on the same thread", () => {
+  let bytes = 800 * MB;
+  const logs: string[] = [];
+  const recorded: unknown[] = [];
+  const memory = new EngineMemory({ enabled: true, tickMs: 60_000, read: () => ({ totalBytes: 8 * GB, availableBytes: 6 * GB, swapFreeBytes: 0, oomKills: 0, fullStall10: 0 }), groups: () => new Map([[9912, bytes]]), log: line => logs.push(line) });
+  memory.useReports(report => recorded.push(report));
+  const child = new FakeChild(9912);
+  memory.within("same-thread", () => memory.track(child as unknown as ChildProcess));
+  memory.turnStarted("same-thread");
+  memory.bindTurn("same-thread", "provider-turn-one");
+  memory.tick();
+  memory.turnEnded("same-thread");
+  bytes = 200 * MB;
+  memory.turnStarted("same-thread");
+  memory.bindTurn("same-thread", "provider-turn-two");
+  memory.turnEnded("same-thread", "provider-turn-one");
+  expect(recorded).toHaveLength(1);
+  memory.tick();
+  memory.turnEnded("same-thread");
+  child.exit("SIGTERM");
+  const reports = logs.filter(line => line.startsWith("run-memory ")).map(line => JSON.parse(line.slice(11)));
+  expect(reports.map(report => report.sampledProcessGroupPeakBytes)).toEqual([800 * MB, 200 * MB]);
+  expect(recorded).toEqual(reports);
+  expect(reports.map(report => report.turnId)).toEqual(["provider-turn-one", "provider-turn-two"]);
+  expect(new Set(reports.map(report => report.runId)).size).toBe(2);
+  expect(reports.every(report => report.samples > 0)).toBe(true);
+  expect(reports.every(report => report.sharedProcess === false)).toBe(true);
 });

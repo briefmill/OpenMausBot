@@ -1,5 +1,6 @@
+import { AskReply } from "./AskCard";
 // @vitest-environment happy-dom
-import { createElement } from "react";
+import { createElement, useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -90,8 +91,12 @@ describe("native dictation in the real composer", () => {
     expect(input().value).toBe("ここまで入力した文章。");
   });
 
-  it("stops synchronously on Send and rejects both late speech and end events", () => {
+  it("keeps Send separate from recording and rejects late speech after sending", () => {
     hear("送信する文章。");
+    expect(button(t("composer.send.message"))).toBeNull();
+    expect(button(t("chat.stopTurn"))).toBeNull();
+    expect(button(t("composer.dictation.stop"))?.querySelector("svg.lucide-square")).not.toBeNull();
+    click(t("composer.dictation.stop"));
     click(t("composer.send.message"));
     expect(speechStop).toHaveBeenCalled();
     expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "send", text: "送信する文章。" }));
@@ -102,6 +107,16 @@ describe("native dictation in the real composer", () => {
     expect(input().value).toBe("");
     expect(button(t("composer.dictation.start"))).not.toBeNull();
     expect(container.textContent).not.toContain(t("composer.dictation.failed"));
+  });
+
+  it("Escape discards dictation when focus leaves the textarea", () => {
+    hear("discard this recording");
+    flushSync(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(speechStop).toHaveBeenCalledOnce();
+    expect(input().value).toBe("");
+    hear("late transcript");
+    expect(input().value).toBe("");
+    expect(fixture.dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: "stop" }));
   });
 
   it("also stops on keyboard Send", () => {
@@ -159,4 +174,23 @@ describe("native dictation in the real composer", () => {
     hear("");
     expect(input().value).toBe("失敗しても残す文章。");
   });
+  it("keeps question dictation unsent and restores its previous answer on Escape", () => {
+    const sent = vi.fn();
+    function Question() {
+      const [value, onChange] = useState("Existing answer.");
+      return createElement(AskReply, { dictation: true, value, onChange, onSend: sent, label: "Question answer", placeholder: "Answer", color: "blue" });
+    }
+    flushSync(() => root.render(createElement(Question)));
+    click(t("composer.dictation.start"));
+    expect(button(t("composer.dictation.stop"))?.querySelector("svg.lucide-square")).not.toBeNull();
+    expect(button(t("chat.send"))?.disabled).toBe(true);
+    hear("discarded answer");
+    flushSync(() => window.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true})));
+    expect(input().value).toBe("Existing answer.");
+    expect(sent).not.toHaveBeenCalled();
+    click(t("composer.dictation.start")); hear("kept answer"); click(t("composer.dictation.stop"));
+    expect(input().value).toBe("Existing answer. kept answer");
+    expect(sent).not.toHaveBeenCalled();
+  });
+
 });

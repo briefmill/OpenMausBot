@@ -1,3 +1,4 @@
+import * as cues from "./dictation-cue";
 // @vitest-environment happy-dom
 import { createElement } from "react";
 import { flushSync } from "react-dom";
@@ -91,4 +92,28 @@ describe("composer dictation through Fish Audio", () => {
     flushSync(() => root.render(createElement(() => { dictation = useComposerDictation({ draftId: "d", text: "", onText: () => {} }); return null; })));
     expect(dictation.ready).toBe(false);
   });
+  it("does not open the microphone after Escape cancels a pending start cue", async () => {
+    let release!: () => void;
+    const cue = vi.spyOn(cues, "playDictationCue").mockImplementation(kind => kind === "start" ? new Promise<void>(resolve => { release = resolve; }) : undefined);
+    try {
+      toggle();
+      expect(fish.speechStart).not.toHaveBeenCalled();
+      flushSync(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+      release(); await Promise.resolve();
+      expect(fish.speechStart).not.toHaveBeenCalled();
+      expect(dictation.recording).toBe(false);
+      expect(cue).toHaveBeenCalledWith("cancel");
+    } finally { cue.mockRestore(); }
+  });
+
+  it("finishes microphone capture before playing its finish cue", () => {
+    const cue = vi.spyOn(cues, "playDictationCue").mockReturnValue(undefined);
+    try {
+      toggle(); toggle();
+      expect(cue).toHaveBeenCalledWith("start");
+      expect(cue).toHaveBeenCalledWith("finish");
+      expect(fish.speechFinish.mock.invocationCallOrder[0]).toBeLessThan(cue.mock.invocationCallOrder[1]);
+    } finally { cue.mockRestore(); }
+  });
+
 });

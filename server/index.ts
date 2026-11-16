@@ -1,5 +1,7 @@
+import { workspaceAccountBinding, workspaceAccountCallProblem, workspaceRoutineGrant } from "./hosted-workspace-policy.ts";
 // Import first: it reads a Cloud home's secrets off the launcher's pipe before any module can start a process.
 import { BOOT_CLOUD_SECRETS } from "./cloud-secrets-boot.ts";
+import { createRunMemoryLedger } from "./run-memory-ledger.ts";
 import { startFailureText } from "./start-failure-text.ts";
 import { reserveGmailDrafts } from "./gmail-draft-policy.ts";
 import { createGmailDrafts } from "./host/gmail-drafts.ts";
@@ -52,7 +54,7 @@ import { RoomMemberLock } from "./room-member-lock.ts";
 import { approvalHeldNote, approvalHeldReason, approvalModeForOrigin, autoVerdict, deliverFullAccessApproval, undeliveredApprovalTool } from "./auto-approve.ts"; import { readsOwnFiles } from "./own-file-reads.ts";
 import { bindSafetyFloor, denyAtSafetyFloor, heldAtSafetyFloor, safetyFloorOn } from "./safety-floor-gate.ts";
 import { CommandAllowlistStore, commandAllowlistCandidate } from "./command-allowlist.ts";
-import { providerMcpTool, providerToolAllowKey } from "./provider-tool-allow.ts";
+import { providerMcpTool, providerToolAllowKey, providerToolConfig, legacyProviderToolAllowKey, rememberedProviderTool } from "./provider-tool-allow.ts";
 import type { CommandAllowlistCandidate, CommandAllowlistResponse } from "../shared/command-allowlist.ts";
 import { claudeAccountInfo } from "./claude-accounts.ts";
 import {
@@ -2098,6 +2100,8 @@ function settleDirectFollowup(generation: string | undefined, outcome: DirectTur
 const directTurnBots = new Map<string, BotRecord>();
 const turnPromptBytes = new Map<string, { stable: number; volatile: number }>();
 let providerFleetReloading = false;
+const runMemoryLedger = createRunMemoryLedger(DATA_DIR);
+engineMemory.useReports(runMemoryLedger.record);
 const turnResources = new TurnResources(); engineMemory.useTurnOrder(createTurnOrder({ turn: (threadId) => directRequestOwners.get(threadId), unattended: (threadId) => isUnattended(store.botByThread(threadId)?.id, threadId), running: (threadId) => coordinator.runningIn(threadId), roomLine: (threadId) => [...(groupTurnOperations.get(store.groupByThread(threadId)?.id ?? "") ?? [])].some((operation) => operation.threadId === threadId && operation.requestMessageId !== undefined) })); const waitWords = createWaitWords({ language: (threadId) => threadLanguage(threadId), starter: () => cloudPlanTier.starter(), held: (threadId, why) => { coordinator.held(threadId, why); perf.noteHeld(threadId, why.startsWith("plan") ? "plan-limit" : "memory"); }, changed: () => broadcast({ kind: "config", ...configStatus() }) }); engineMemory.useWaits(waitWords);
 const sharedComputerControl = new SharedComputerControl(turnResources, (owner) => store.botByThread(owner.threadId)?.name);
 const phoneHold = createPhoneHold({ onChange: (held) => { phoneGate.holdChanged(held); phoneScreen.holdChanged(held); } });
@@ -6529,15 +6533,16 @@ bus.subscribe((event: RuntimeEvent) => {
       const providerTool = permission && asker && event.requestId && !event.requiresExplicitApproval && !guestDriven
         ? providerMcpTool(event.tool)
         : null;
-      const configuredMcp = providerTool && asker ? engineMcpServers(asker)[providerTool.server] : undefined;
+      const configuredMcp = providerTool && asker ? providerToolConfig(providerTool.server, engineMcpServers(asker)) : undefined;
       const toolAllowKey = configuredMcp === undefined
         ? null
         : providerToolAllowKey(providerInstanceId, event.tool, configuredMcp);
+      const legacyToolAllowKey = configuredMcp === undefined ? null : legacyProviderToolAllowKey(providerInstanceId, event.tool, configuredMcp);
       const verdict = permission && asker && event.requestId
         ? heldAtSafetyFloor(event, autoVerdict(effectiveApprovalMode, event.tool, {
           requiresExplicitApproval: event.requiresExplicitApproval,
           commandAllowed: Boolean(command && commandAllowlist.matches(asker.id, command)),
-          toolAllowed: Boolean(toolAllowKey && asker.alwaysAllow?.includes(toolAllowKey)), ownFilesRead: !guestDriven && readsOwnFiles(DATA_DIR, asker.id, event), // never in a guest's turn: the folder holds its owner's memory
+          toolAllowed: rememberedProviderTool(store.bot(asker.id)?.alwaysAllow, toolAllowKey, legacyToolAllowKey) || rememberedProviderTool(asker.alwaysAllow, toolAllowKey, legacyToolAllowKey) || (!guestDriven && workspaceRoutineGrant(event, asker, routines?.runForThread(event.threadId), routines?.listRoutines() ?? [])), ownFilesRead: !guestDriven && readsOwnFiles(DATA_DIR, asker.id, event), // never in a guest's turn: the folder holds its owner's memory
         }))
         : null;
       // Claude accepts --permission-mode auto for any model but silently starts in Manual where auto is unavailable (Haiku 4.5, Sonnet 4.5, an org that disabled it).
@@ -12321,7 +12326,7 @@ ROUTES.push(createBrowserSiteRoutes({
 ROUTES.push(createBrowserEvidenceRoutes({ evidence: browserEvidence.attach({ onChange: (listener) => store.onChange(listener), threadExists: (id) => Boolean(threadOwner(id)) }), threadExists: (id) => Boolean(threadOwner(id)) }));
 const loginRoutes = botLogins.routes((id) => Boolean(store.bot(id))); ROUTES.push(createLoginRoutes(loginRoutes), createVaultRoutes({ logins: loginRoutes, secrets: logins, linked: () => botLogins.linkedSecrets(), keys: mcpKeys, reader: vaultReaders.viewer }));
 const privateRecords = createPrivateRecords({ visibleFor: (auth) => visibleTo(viewerFor(auth)), botExists: (id) => Boolean(store.bot(id)), routine: (id) => routines?.listRoutines().find((routine) => routine.id === id) }); const includedHosting = createIncludedHosting({ credential: () => hostingCredential(), dataDir: DATA_DIR, warn: (line) => console.warn(line) }), appPublisher = createAppPublisher({ hosting: includedHosting, botName: (id) => store.bot(id)?.name ?? "", botFolder: workspaceDir, home: homedir(), env: process.env }); ROUTES.push(createPublishedAppsRoutes({ visibleFor: (auth) => visibleTo(viewerFor(auth)), apps: createPublishedApps({ included: { hosting: includedHosting, publisher: appPublisher }, bots: () => store.bots, rooms: () => store.groups, messages: (threadId) => store.messagesFor(threadId), folders: (bot) => [...new Set([bot.threadId, ...(bot.tasks ?? []).map((task) => task.threadId)].flatMap((threadId) => liveRoots(threadId, bot.id) ?? []))], ownFolder: (botId, threadId) => join(TASK_WORKSPACES_DIR, botId, threadId), pages: () => publishedPages.store.list(), unpublishPage: (pageId) => publishedPages.publisher.unpublish({ pageId }), netlifyToken: (botId, auth, threadId) => savedNetlifyToken(logins, botId, CLOUD_TEAM && !threadId ? null : vaultReaders.turn(threadId ?? ""), auth.kind === "session" ? actorKey(auth) : null), ownChat: (auth, threadId) => auth.kind === "session" && teamHost.privateTo(threadId) === personKey(auth.session), home: homedir(), env: process.env }) })); ROUTES.push(createUsageRoutes({
-  dataDir: DATA_DIR, prices: operatorPrices,
+  dataDir: DATA_DIR, flushMemory: runMemoryLedger.flush, prices: operatorPrices,
   budget: () => spendState(cfg, DATA_DIR),
   currency: () => cfg.billing?.currency ?? "USD",
   recorder: usageTrace, messages: (threadId) => store.messagesFor(threadId), liveBot: (threadId) => {
@@ -13112,6 +13117,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 200, { result: await cloudComputerRpc(body, {
           cfg, signal: abort.signal, folder: () => messageFileRootsForThread(internalCapability.botId, internalCapability.threadId)[0],
           boxId: () => internalCapability.boxId ?? claimedBoatId(internalCapability),
+          agentDesktopEnabled: boxId => internalCapability.botId === "7ecd0c83-c1a0-4099-82d7-9fbc1e2b6d62" && (!boxId || boxId === "bx_mnt75c86"),
+          agentDesktopCanClaim: async () => internalCapability.botId === "7ecd0c83-c1a0-4099-82d7-9fbc1e2b6d62" && (await ownCloudComputer(cfg, internalCapability.botId, managedBoatOwners()))?.boxId === "bx_mnt75c86",
           gate: () => computerCallGate(internalCapability, abort.signal),
           assertActive: requireActiveInternalCapability, recovery: boatRecovery, settled: (answered) => runComputers.callSettled(internalCapability.botId, internalCapability.threadId, answered),
         }) });
@@ -14434,6 +14441,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           dispatchRefusal = text;
           throw new Error(text);
         };
+        const workspaceBinding = workspaceAccountBinding(currentSender);
+        const workspaceProblem = workspaceAccountCallProblem(workspaceBinding, body);
+        if (workspaceProblem) return refuseOutbound(workspaceProblem);
         let upstream: Awaited<ReturnType<typeof composio.relayMcp>>;
         try { upstream = await composio.relayMcp(
           teamConnections.via(actor.access)[0],
@@ -14451,6 +14461,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
                 (call.kind === "unrecognized" && fresh.connectorTools !== undefined)) {
               refuseDispatch("This bot's connected-app permissions changed. The call was not run.");
             }
+            const freshBinding = workspaceAccountBinding(fresh);
+            if (JSON.stringify(freshBinding) !== JSON.stringify(workspaceBinding)) refuseDispatch("This bot account assignment changed. The call was not run.");
+            const accountProblem = workspaceAccountCallProblem(freshBinding, body);
+            if (accountProblem) refuseDispatch(accountProblem);
             const reservedDrafts = internalCapability.gmailDrafts ??= new Set();
             const nextDrafts = new Set(reservedDrafts);
             const draftReservation = reserveGmailDrafts(connectorCalls, nextDrafts);
@@ -14466,7 +14480,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               }
             }
             for (const key of nextDrafts) reservedDrafts.add(key);
-          }, undefined, teamConnections.via(actor.access)[1],
+          }, undefined, teamConnections.via(actor.access)[1], workspaceBinding,
         ); } catch (error) {
           if (dispatchRefusal) return refuseOutbound(dispatchRefusal);
           throw error;
@@ -15407,7 +15421,11 @@ const gracefulShutdown = createGracefulShutdown({
       tunnelListener?.close(); void tailnetShare.close(); phoneRelay?.stop(); stopCloudHomeConnectedApps();
     },
     () => phoneScreen.closeAll(),
-    async () => { await managedDesktop.close(); await registry.disposeAll(); await workerStartup?.close(); },
+    async () => {
+      await managedDesktop.close();
+      try { await registry.disposeAll(); }
+      finally { try { await workerStartup?.close(); } finally { await runMemoryLedger.flush(); } }
+    },
     async () => { await dataEngine.closeAll().catch((error) => console.warn("data: close failed", error)); },
     async () => {
       const temporaries = [...temporaryBrowserSessions.keys()].map((botId) => forgetTemporaryBrowser(botId));

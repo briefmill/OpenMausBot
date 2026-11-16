@@ -1,3 +1,4 @@
+import { transcribeOpenAiDictation } from "../tts/dictation-openai.ts";
 // The voice routes: whether a voice is ready, the provider's voices (searched, or one pasted by ID or link), adding an
 // ElevenLabs Voice Library voice to My Voices, speaking a line, and hearing speech. Scopes are keyed by path in server/request-auth.ts.
 import type { AppConfig } from "../config.ts";
@@ -95,7 +96,8 @@ export function createTtsRoutes(deps: TtsRouteDeps): RouteHandler {
       const key = cfg.tts?.fishKey;
       const own = key ? null : voiceCredential(cfg.tts?.key);
       const eleven = own?.included ? null : own;
-      if (!key && !eleven) {
+      const openaiKey = cfg.openai?.key;
+      if (!key && !eleven && !openaiKey) {
         req.resume();
         return json(res, 409, userError("serverError.voice.fishKeyRequired"));
       }
@@ -117,7 +119,9 @@ export function createTtsRoutes(deps: TtsRouteDeps): RouteHandler {
       });
       if (!audio) return json(res, 413, { error: `audio exceeds ${TRANSCRIBE_MAX_BYTES} bytes` });
       try {
-        const text = key ? await fish.transcribe(audio, mime, key) : await elevenlabs.transcribe(audio, mime, eleven!.token, eleven!.api);
+        const text = key ? await fish.transcribe(audio, mime, key)
+          : eleven ? await elevenlabs.transcribe(audio, mime, eleven.token, eleven.api)
+            : await transcribeOpenAiDictation(audio, openaiKey!);
         return json(res, 200, { text });
       } catch (e) {
         return json(res, 502, { error: e instanceof Error ? e.message : String(e), ...userErrorFields(e) });

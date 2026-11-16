@@ -1,3 +1,4 @@
+import { createRunMemoryLedger } from "./run-memory-ledger.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -29,6 +30,36 @@ describe("usage ledger through real turns", () => {
     expect(paired.token).toBeTypeOf("string");
     return paired.token;
   };
+
+  it("serves memory records through the real owner route and refuses client-only devices", async () => {
+    const created = await control(["new-bot", "--name", "Memory endpoint probe"]);
+    const inventory = await (await api("/api/bots?messages=0")).json() as { bots: Array<{ id: string; threadId: string }> };
+    const threadId = inventory.bots.find(bot => bot.id === created.bot.id)?.threadId;
+    expect(threadId).toBeTypeOf("string");
+    const ledger = createRunMemoryLedger(session.info.dataDir);
+    const at = Date.now() - 1000;
+    const report = { runId: "synthetic-visible-run", threadId: threadId!, turnId: "synthetic-provider-turn", startedAt: at - 100, endedAt: at, sampledProcessGroupPeakBytes: 1234, sharedProcess: false, samples: 1 };
+    ledger.record(report);
+    ledger.record({ ...report, runId: "synthetic-hidden-run", threadId: "unknown-private-thread" });
+    await ledger.flush();
+    const response = await api("/api/usage/memory");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    const body = await response.json() as { rows: Array<{ runId: string; turnId?: string }>; additive: boolean };
+    expect(body.rows).toEqual([expect.objectContaining({ runId: report.runId, turnId: report.turnId }), expect.objectContaining({ runId: "synthetic-hidden-run" })]);
+    expect(body.additive).toBe(false);
+    const firstPageResponse = await api("/api/usage/memory?limit=1");
+    const firstPage = await firstPageResponse.json() as { rows: Array<{ runId: string }>; next: string };
+    expect(firstPage.rows.map(row => row.runId)).toEqual([report.runId]);
+    const nextPageResponse = await api(`/api/usage/memory?limit=1&cursor=${encodeURIComponent(firstPage.next)}`);
+    const nextPage = await nextPageResponse.json() as { rows: Array<{ runId: string }> };
+    expect(nextPage.rows.map(row => row.runId)).toEqual(["synthetic-hidden-run"]);
+    expect((await api("/api/usage/memory?limit=0")).status).toBe(400);
+    expect((await api("/api/usage/memory?cursor=bad")).status).toBe(400);
+
+    const client = await pair("Memory client probe", ["client"]);
+    expect((await api("/api/usage/memory", { headers: { authorization: `Bearer ${client}` } })).status).toBe(403);
+  }, 60_000);
 
   it("writes one row per settled turn naming who asked, and reports it by person, bot and model", async () => {
     const created = await control(["new-bot", "--name", "Ledger probe"]);

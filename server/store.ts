@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, readFileSync, mkdirSync, rmSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path"; import { isDeepStrictEqual } from "node:util";
 
+import { ToolSelectionAudit } from "./tool-selection-audit.ts";
 import { OwnedFile, writeFileAtomic } from "./atomic.ts"; import { saveSoon } from "./save-batch.ts"; import { discardNativeLog } from "./drivers/native.ts";
 import { commitRegistryChange, keptRevocation, saveRegistryFor, touchesPermissions } from "./registry-save.ts";
 import { parseToolScope, toolScopeWidens } from "../shared/tool-scope.ts"; import { grantScopedApps } from "../shared/connector-scopes.ts"; import { dropRetiredApps } from "./retired-apps.ts";
@@ -285,6 +286,7 @@ export class Store {
   newBotSharing: NewBotSharingRule = sharedUnlessRestricted;
   private listeners = new Set<(change: StoreChange) => void>();
   private registeringInitialSections = true;
+  private readonly selectionAudit = new ToolSelectionAudit(DATA_DIR);
   private readonly botsFile = new OwnedFile(BOTS_FILE, { mode: 0o600 }); private readonly groupsFile = new OwnedFile(GROUPS_FILE, { mode: 0o600 });
   /** Clearing this slot must not clear a concurrently running task's activity. */
   private legacyActivities = new Map<string, BotActivity>();
@@ -318,6 +320,7 @@ export class Store {
     } catch {
       this.groups = [];
     }
+    this.selectionAudit.prime(this.bots);
     this.rememberSections([...this.bots, ...this.groups].map((record) => record.section));
     let botsMigrated = false;
     const browserProfileAliases = loadBrowserProfileIdAliases();
@@ -677,6 +680,7 @@ export class Store {
     this.botsFile.write(JSON.stringify(bots.map(({ busy: _busy, activity: _activity, ...bot }) => ({ ...bot,
       tasks: bot.tasks?.map(({ busy: _taskBusy, activity: _taskActivity, turnStartedAt: _taskTurnStarted, ...task }) => persistedPin(task)),
     }))));
+    this.selectionAudit.saved(bots);
   }
 
   private saveGroups(groups: GroupRecord[] = this.groups, registerSections = true) {

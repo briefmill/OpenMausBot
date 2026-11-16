@@ -53,6 +53,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     return send(msg.id, catalog(msg.params));
   }
   if (msg.method === "tools/call") {
+    if (script.missingSelected && msg.params.name === "retired") return process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:msg.id,error:{code:-32601,message:"Tool retired is unavailable"}}) + "\\n");
     appendFileSync(process.env.SCRIPT + ".calls", msg.params.name + "\\n");
     send(msg.id, { content: [{ type: "text", text: script.text ?? "executed" }] });
     if (delayedList) { send(delayedList.id, catalog()); delayedList = undefined; }
@@ -292,6 +293,17 @@ describe("mcp-gate", () => {
   });
 
   const selected = { OMB_GATE_TOOL_SCOPE: JSON.stringify({ allow: ["mcp:shop:read"] }), OMB_GATE_BUDGET: "0" };
+
+  it("keeps a restricted gate usable when a selected tool no longer exists upstream", async () => {
+    start({ missingSelected: true }, { OMB_GATE_BUDGET: "0", OMB_GATE_TOOL_SCOPE: JSON.stringify({ allow: ["mcp:shop:read", "mcp:shop:retired"] }) }, SCOPED_UPSTREAM);
+    send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    const listed = JSON.parse(await nextLine());
+    expect(listed.result.tools.map((tool: { name: string }) => tool.name)).toEqual(["read"]);
+    expect((await call("retired", 2)).error).toMatchObject({ code: -32601, message: "Tool retired is unavailable" });
+    expect((await call("read", 3)).result.content[0].text).toBe("executed");
+    expect(readFileSync(join(scratch, "reply.json.calls"), "utf8")).toBe("read\n");
+    expect(gate!.exitCode).toBeNull();
+  });
 
   it("filters each catalog page and rejects a withheld call before upstream execution", async () => {
     start({}, selected, SCOPED_UPSTREAM);

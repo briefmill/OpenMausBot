@@ -1982,3 +1982,22 @@ describe("pace: how soon the host must tick", () => {
     expect(w.coordinator.pace()).toBe("idle");
   });
 });
+
+it("dispatches 34 independent teammate threads before any teammate finishes", async () => {
+  const w = world(node => node.botId.startsWith("parallel-worker-") ? "hold" : undefined);
+  try {
+    const ids: string[] = [];
+    for (let i = 0; i < 34; i++) {
+      const target = { botId: `parallel-worker-${i}`, threadId: `parallel-thread-${i}` };
+      ids.push(send(w, chief, "parallel-root", undefined, target, `Independent fixture job ${i}`).node.id);
+    }
+    ended(w, "parallel-root");
+    w.coordinator.tick();
+    await expect.poll(() => w.host.held.size).toBe(34);
+    expect(new Set(w.host.runs.filter(run => run.node.botId.startsWith("parallel-worker-")).map(run => run.node.threadId)).size).toBe(34);
+    expect(ids.every(id => w.coordinator.node(id)?.status === "running")).toBe(true);
+    expect(ids.every(id => w.coordinator.node(id)?.executions === 1)).toBe(true);
+    for (const id of ids) await w.host.release(id, { ok: true, text: "Independent fixture finished" });
+    expect(ids.every(id => w.coordinator.node(id)?.status === "completed")).toBe(true);
+  } finally { w.coordinator.close(); }
+});

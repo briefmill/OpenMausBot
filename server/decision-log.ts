@@ -13,6 +13,7 @@ import { csvCell, monthKey } from "./usage-ledger.ts";
 
 /** auto-* rows came from a policy with no card in front of a person; user-* rows record what a person answered. */
 export type DecisionKind =
+  | "configuration-saved"
   | "auto-approved"
   | "auto-denied"
   | "card-shown"
@@ -36,6 +37,7 @@ export type DecisionSource =
   | "profile"
   | "model"
   | "user"
+  | "tool-selection"
   | "connector-scope"
   | "outbound"
   | "team-memory"
@@ -123,8 +125,8 @@ async function writeDecision(dataDir: string, record: DecisionRow): Promise<void
 
 /** A full disk must not turn into denied tools. */
 export function appendDecision(dataDir: string, row: Omit<DecisionRow, "at">): void {
-  const scope = row.source === "user" ? actorScope.getStore() : undefined;
-  const actor = row.actor ?? scope?.actor;
+  const scope = row.source === "user" || row.source === "tool-selection" ? actorScope.getStore() : undefined;
+  const actor = row.actor ?? scope?.actor ?? (row.source === "tool-selection" ? { kind: "worker" as const } : undefined);
   const via = row.via ?? scope?.via;
   // Redact now: the row records what was true at the moment of the decision.
   const record = redactSecrets({ at: new Date().toISOString(), ...row, ...(actor ? { actor } : {}), ...(via ? { via } : {}) }) as DecisionRow;

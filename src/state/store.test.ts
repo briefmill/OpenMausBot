@@ -2916,6 +2916,23 @@ describe("restoring the open conversation", () => {
     };
     const hello = () => ({ kind: "hello", resumed: false, cursor: "run:0" });
 
+    it("does not release an approval when saving Always Allow fails", async () => {
+      const { stream } = await boot();
+      stream.send(hello());
+      await settle();
+      const calls: string[] = [];
+      vi.stubGlobal("fetch", (path: string) => {
+        calls.push(path);
+        return Promise.resolve(new Response(JSON.stringify({ error: "permission could not be saved" }), { status: 409 }));
+      });
+      const onError = vi.fn();
+      dispatch({ type: "decideRequest", threadId: first.threadId, requestId: "remember-fixture", behavior: "allow", alwaysAllow: { botId: first.id, key: "provider-tool:fixture:notes:read:123" }, onError });
+      await settle();
+      expect(calls.some(path => path.includes(`/api/bots/${first.id}`))).toBe(true);
+      expect(calls.some(path => path.endsWith("/respond"))).toBe(false);
+      expect(onError).toHaveBeenCalledOnce();
+    });
+
     it("keeps the UI mounted when a reconnect receives a malformed bots snapshot", async () => {
       const { stream } = await boot();
       stream.send(hello());

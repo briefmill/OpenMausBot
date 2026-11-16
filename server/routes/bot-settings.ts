@@ -223,6 +223,9 @@ export function createBotSettingsRoutes(deps: BotSettingsRouteDeps): RouteHandle
       const refusal = cardAnswerRefusal(auth, bot.threadId, pending.card!.requestId!, "allow");
       if (refusal) return json(res, 403, { error: refusal });
       const savedBot = store.bot(bot.id)!;
+      if (!savedBot.alwaysAllow?.includes(allowKey) && (savedBot.alwaysAllow?.length ?? 0) >= 200) {
+        return json(res, 409, { error: "The saved tool permission limit is full. Remove an unused permission before saving another." });
+      }
       store.patchBot(bot.id, {
         alwaysAllow: [...new Set([...(savedBot.alwaysAllow ?? []), allowKey])].slice(0, 200),
       });

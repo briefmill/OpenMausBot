@@ -187,3 +187,24 @@ it("carries the latest original tool selection into fresh direct and room MCP co
     await control(["wait", "--channel", channel.id, "--timeout", "30"]);
   });
 }, 60_000);
+
+it("persists connector restrictions and attributes their audit rows through the isolated API", async () => {
+  const { readDecisions } = await import("./decision-log.ts");
+  await withFixture("happy", async ({ api, control, dataDir }) => {
+    const { bot } = await control(["new-bot", "--name", "Connector audit fixture"]);
+    const path = `/api/bots/${bot.id}`;
+    const connectorScopes = { apps: { gmail: "read" } };
+    const connectorTools = { gmail: { tools: ["GMAIL_FETCH_EMAILS"] } };
+    expect((await api("PATCH", path, { connectorScopes, connectorTools })).status).toBe(200);
+    expect((await api("PATCH", path, { title: "Unrelated connector audit edit" })).status).toBe(200);
+    const persisted = JSON.parse(readFileSync(join(dataDir, "bots.json"), "utf8")).find((row: { id: string }) => row.id === bot.id);
+    expect(persisted).toMatchObject({ connectorScopes, connectorTools });
+    await expect.poll(() => readDecisions(dataDir, 100).filter(row => row.botId === bot.id && row.tool === "connectorTools").length).toBe(1);
+    const rows = readDecisions(dataDir, 100).filter(row => row.botId === bot.id && ["connectorScopes", "connectorTools"].includes(row.tool ?? ""));
+    expect(rows).toHaveLength(2);
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ tool: "connectorScopes", actor: { kind: "worker" }, decision: "configuration-saved" }),
+      expect.objectContaining({ tool: "connectorTools", actor: { kind: "worker" }, decision: "configuration-saved" }),
+    ]));
+  });
+}, 60_000);

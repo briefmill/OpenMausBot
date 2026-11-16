@@ -23,3 +23,18 @@ export function fishListeningReady(config: ConfigStatus | null | undefined): boo
 export function listensHere(capabilities: DesktopCapabilities, config: ConfigStatus | null | undefined): boolean {
   return capabilities.dictation.available && (capabilities.dictation.engine !== "fish-audio" || fishListeningReady(config));
 }
+
+function composerPageCapture(capabilities: DesktopCapabilities): boolean {
+  return (capabilities.dictation.available && capabilities.dictation.engine === "fish-audio")
+    || ((capabilities.host.platform === "win32" || capabilities.host.platform === "linux")
+      && capabilities.dictation.reasonCode === "remote-server");
+}
+
+export function composerSpeechBridge(): SpeechBridge | Window["ogb"] {
+  return composerPageCapture(desktopCapabilitiesNow()) ? fishSpeech : speechBridge();
+}
+
+export function composerDictationReady(capabilities: DesktopCapabilities, config: ConfigStatus | null | undefined): boolean {
+  return listensHere(capabilities, config) || (composerPageCapture(capabilities)
+    && (fishListeningReady(config) || config?.openai?.configured === true));
+}

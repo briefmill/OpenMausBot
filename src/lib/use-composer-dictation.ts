@@ -3,8 +3,9 @@ import { useDesktopCapabilities } from "@/components/DesktopCapabilities";
 import { withOpenSettings } from "@/components/OpenSystemSettings";
 import { useStoreSelector } from "@/state/store-select";
 import { t } from "./i18n";
+import { playDictationCue } from "./dictation-cue";
 import { fishSpeech } from "./fish-speech";
-import { listensHere, speechBridge } from "./speech";
+import { composerDictationReady, composerSpeechBridge } from "./speech";
 
 export function useComposerDictation({ draftId, text, onText }: {
   draftId: string;
@@ -12,13 +13,13 @@ export function useComposerDictation({ draftId, text, onText }: {
   onText: (text: string) => void;
 }) {
   const { capabilities } = useDesktopCapabilities();
-  const ready = listensHere(capabilities, useStoreSelector((state) => state.config));
+  const ready = composerDictationReady(capabilities, useStoreSelector((state) => state.config));
   const [recording, setRecording] = useState(false);
   const [speechError, setSpeechError] = useState<ReactNode>(null);
   const draft = useRef({ id: draftId, text });
   draft.current = { id: draftId, text };
   const session = useRef({ draftId: "", base: "" });
-  const cancel = useRef<(() => void) | null>(null);
+  const cancel = useRef<((discard?: boolean) => void) | null>(null);
   // Fish Audio hears the clip only at its end, so stopping the mic must finish it.
   const finish = useRef<(() => void) | null>(null);
   const stop = useCallback(() => {
@@ -28,7 +29,7 @@ export function useComposerDictation({ draftId, text, onText }: {
 
   useEffect(() => {
     if (!recording) return;
-    const bridge = speechBridge();
+    const bridge = composerSpeechBridge();
     if (!bridge || session.current.draftId !== draftId) {
       setRecording(false);
       return;
@@ -37,14 +38,24 @@ export function useComposerDictation({ draftId, text, onText }: {
     const base = session.current.base;
     let lastText = base;
     let active = true;
-    const cancelSession = () => {
+    const cancelSession = (discard = false) => {
       if (!active) return;
       active = false;
       void bridge.speechStop();
+      if (discard && draft.current.id === draftId && draft.current.text === lastText) {
+        draft.current.text = base;
+        onText(base);
+      }
+      void playDictationCue(discard ? "cancel" : "finish");
       setRecording(false);
     };
     cancel.current = cancelSession;
-    finish.current = bridge === fishSpeech ? () => void fishSpeech.speechFinish() : null;
+    finish.current = bridge === fishSpeech ? () => { void fishSpeech.speechFinish(); void playDictationCue("finish"); } : null;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !active) return;
+      event.preventDefault(); event.stopImmediatePropagation(); cancelSession(true);
+    };
+    window.addEventListener("keydown", escape, true);
     const offTranscript = bridge.onSpeechTranscript((line) => {
       if (!active || draft.current.id !== draftId) return;
       if (draft.current.text !== lastText) {
@@ -68,12 +79,16 @@ export function useComposerDictation({ draftId, text, onText }: {
           : t(reason === "dictation-disabled" ? "composer.dictation.disabled" : "composer.dictation.failed")));
       }
     });
-    void bridge.speechStart().catch(() => {
+    const start = () => bridge.speechStart().catch(() => {
       if (!active) return;
       cancelSession();
       setSpeechError(t("composer.dictation.failed"));
     });
+    const cue = playDictationCue("start");
+    if (cue) void cue.then(() => { if (active) void start(); });
+    else void start();
     return () => {
+      window.removeEventListener("keydown", escape, true);
       if (cancel.current === cancelSession) cancel.current = null;
       finish.current = null;
       offTranscript();
@@ -86,7 +101,7 @@ export function useComposerDictation({ draftId, text, onText }: {
   }, [recording, draftId, onText]);
 
   const toggle = () => {
-    if (!ready || !speechBridge()) {
+    if (!ready || !composerSpeechBridge()) {
       setSpeechError(t("composer.dictation.unavailable"));
     } else if (recording) {
       if (finish.current) finish.current();

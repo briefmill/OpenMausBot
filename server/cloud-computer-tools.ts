@@ -1,6 +1,7 @@
+import { workspaceDesktopAdapter } from "./hosted-workspace-policy.ts";
 // Served at POST /api/internal/computer/mcp behind a turn-scoped capability, so the Boat credential never leaves this server.
 import type { ValidateFunction } from "ajv";
-import { isolatedRemoteCommand, screenshotBoat } from "./boat.ts";
+import { isolatedRemoteCommand, screenshotBoat, runCommand } from "./boat.ts";
 import { isRedditAddress, REDDIT_REFUSAL } from "./browser/egress/reddit.ts";
 import {
   backgroundStatus, commandLateText, EXEC_LATE, PROCESS_ID_PATTERN, processIdOn, startInBackground, STATUS_WAIT_MAX_SECONDS, STDERR_TAIL_CHARS, STDOUT_TAIL_CHARS,
@@ -74,6 +75,7 @@ let validators: Map<string, ValidateFunction> | undefined;
 /** x and y reach the remote shell unquoted, so only the advertised integer schema stands between a model's arguments and a command line.
  * A cloud computer browses from a data centre, so it never opens Reddit. */
 export function cloudComputerCallProblem(name: unknown, args: unknown): string | null {
+  if (workspaceDesktopAdapter?.isAgentDesktopTool(name)) return workspaceDesktopAdapter.agentDesktopCallProblem(name, args);
   validators ??= new Map(CLOUD_COMPUTER_TOOLS.map(entry => [entry.name, compileToolSchema(entry.inputSchema)]));
   const validate = typeof name === "string" ? validators.get(name) : undefined;
   if (!validate) return "Unknown cloud computer tool. Use one of the advertised computer tools.";
@@ -109,7 +111,17 @@ export async function runCloudComputerTool(
   folder?: string | null,
   deadline = Date.now() + HARNESS_CALL_BUDGET_MS,
   stopped?: AbortSignal,
+  accessibilityEnabled = false,
 ): Promise<CloudComputerResult> {
+  if (workspaceDesktopAdapter?.isAgentDesktopTool(name)) {
+    const problem = workspaceDesktopAdapter.agentDesktopCallProblem(name, args);
+    if (problem || !accessibilityEnabled) return { isError: true, content: [{type:"text",text:problem || "Accessibility tools are not enabled for this assigned computer."}] };
+    signal.throwIfAborted();
+    const result = await runCommand(cfg, boxId, isolatedRemoteCommand(workspaceDesktopAdapter.agentDesktopCommand(name,args)), { signal, timeoutMs:15000 });
+    signal.throwIfAborted();
+    const out = workspaceDesktopAdapter.agentDesktopOutput(result.stdout,result.stderr,result.ok);
+    return { isError:out.isError,content:[{type:"text",text:out.text}] };
+  }
   const problem = cloudComputerCallProblem(name, args);
   if (problem) return { isError: true, content: [{ type: "text", text: problem }] };
   signal.throwIfAborted();
@@ -187,13 +199,15 @@ export async function cloudComputerRpc(
     /** A computer that stopped answering (server/boat-recovery.ts): what the bot is told instead, and once after it was replaced. */
     recovery?: { refusal(boxId: string, phase: "before" | "after"): string | null; notice(boxId: string): string | null };
     /** Whether the computer answered this call: a call refused before it was sent, or one that got no answer, did not. */
+    agentDesktopEnabled?(boxId: string): boolean;
+    agentDesktopCanClaim?(): Promise<boolean>;
     settled?(answered: boolean): void;
   },
 ): Promise<{ tools: typeof CLOUD_COMPUTER_TOOLS } | CloudComputerResult> {
   const started = Date.now();
   if (request?.method === "tools/list") {
     deps.assertActive();
-    return { tools: CLOUD_COMPUTER_TOOLS };
+    return { tools: workspaceDesktopAdapter && deps.agentDesktopEnabled?.(deps.boxId() ?? "") ? [...CLOUD_COMPUTER_TOOLS, ...workspaceDesktopAdapter.AGENT_DESKTOP_TOOLS] : CLOUD_COMPUTER_TOOLS };
   }
   if (request?.method !== "tools/call") throw Object.assign(new Error("unsupported computer method"), { status: 400 });
   const params = (request.params && typeof request.params === "object" ? request.params : {}) as { name?: unknown; arguments?: unknown };
@@ -202,6 +216,10 @@ export async function cloudComputerRpc(
   const deadline = started + (deps.budgetMs ?? cloudComputerCallBudgetMs(params.name));
   const problem = cloudComputerCallProblem(params.name, args);
   if (problem) return { isError: true, content: [{ type: "text", text: problem }] };
+  if (workspaceDesktopAdapter?.isAgentDesktopTool(params.name)) {
+    if (!deps.agentDesktopEnabled?.(deps.boxId() ?? "")) return {isError:true,content:[{type:"text",text:"Accessibility tools are not enabled for this bot's assigned computer."}]};
+    if (!deps.boxId() && !(await deps.agentDesktopCanClaim?.())) return {isError:true,content:[{type:"text",text:"The configured accessibility guest is not currently owned by this bot. No computer was started."}]};
+  }
   const control = await deps.gate();
   // A refusal acts on no Boat, so it answers even when the turn has ended meanwhile.
   if (control.held) return { isError: true, content: [{ type: "text", text: controlRefusal(control) }] };
@@ -217,7 +235,7 @@ export async function cloudComputerRpc(
   const late = AbortSignal.timeout(Math.max(1, deadline - Date.now()));
   let result: CloudComputerResult;
   try {
-    result = await runCloudComputerTool(deps.cfg, boxId, params.name as string, args as Record<string, unknown>, AbortSignal.any([deps.signal, late]), deps.folder?.(), deadline, deps.signal);
+    result = await runCloudComputerTool(deps.cfg, boxId, params.name as string, args as Record<string, unknown>, AbortSignal.any([deps.signal, late]), deps.folder?.(), deadline, deps.signal, deps.agentDesktopEnabled?.(boxId) ?? false);
   } catch (error) {
     if (deps.signal.aborted) throw error;
     const after = refused("after");

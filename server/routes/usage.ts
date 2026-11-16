@@ -1,3 +1,4 @@
+import { readRunMemory } from "../run-memory-ledger.ts";
 import { redactSecretsInText } from "../../shared/redact.ts";
 import type { PriceList } from "../prices.ts";
 import type { RequestAuth } from "../request-auth.ts";
@@ -21,6 +22,7 @@ import { PASS, type RouteHandler } from "./table.ts";
 
 export interface UsageRouteDeps {
   dataDir: string;
+  flushMemory?(): Promise<void>;
   prices(): PriceList | null;
   budget(): SpendState | null;
   currency(): string;
@@ -44,6 +46,22 @@ const whole = (raw: string | null, fallback: number, max: number): number | null
 export function createUsageRoutes(deps: UsageRouteDeps): RouteHandler {
   const traces = createTraceService({ dataDir: deps.dataDir, recorder: deps.recorder, messages: deps.messages, liveBot: deps.liveBot });
   return async ({ res, url, path, method, auth, json }) => {
+    if (method === "GET" && path === "/api/usage/memory") {
+      if (!auth.scopes.includes("admin")) return json(res, 403, { error: "admin access required" });
+      const range = parseUsageRange(url.searchParams.get("from"), url.searchParams.get("to"));
+      if (!range) return json(res, 400, { error: "invalid date range" });
+      await deps.flushMemory?.();
+      res.setHeader("cache-control", "private, no-store");
+      const limit = whole(url.searchParams.get("limit"), 200, 1000);
+      if (!limit) return json(res, 400, { error: "limit must be 1 to 1000" });
+      try {
+        const result = await readRunMemory(deps.dataDir, range, deps.canSee(auth), { limit, ...(url.searchParams.has("cursor") ? { cursor: url.searchParams.get("cursor")! } : {}) });
+        return json(res, 200, { ...result, measurement: "sampled-process-group", additive: false });
+      } catch (error) {
+        if (error instanceof RangeError) return json(res, 400, { error: "invalid memory page cursor" });
+        throw error;
+      }
+    }
     if (method === "GET" && path === "/api/usage/traces") {
       const range = parseUsageRange(url.searchParams.get("from"), url.searchParams.get("to"));
       if (!range) return json(res, 400, { error: "from and to must be YYYY-MM-DD, from no later than to, at most a year apart" });

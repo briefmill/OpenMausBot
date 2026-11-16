@@ -1,8 +1,11 @@
 // On a Cloud home each engine process and the MCP servers it starts take hundreds of MB, and a Linux machine without swap
 // that runs out keeps reclaiming, unresponsive, long before its OOM killer acts.
+import { randomUUID } from "node:crypto";
+import type { RunMemoryReport } from "./run-memory-ledger.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ChildProcess } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
+import { containerMemory } from "./container-memory.ts";
 import { chatNotice, noticeFailure } from "./chat-notices.ts";
 import { newEventId, newId, TurnNotStartedError, type ProviderAdapter, type ProviderInstance, type RuntimeEvent, type RuntimeEventListener } from "./contracts.ts";
 
@@ -34,7 +37,7 @@ export const ENGINE_PROCESS_KINDS: ReadonlySet<string> = new Set(["claudeAgent",
 /** Chat-runtime engines (openai-chat.ts) have no process of their own, but each turn starts its MCP servers, each a Node process. */
 export const CHAT_RUNTIME_KINDS: ReadonlySet<string> = new Set(["openai-compat", "cerebras", "greenference", "grok", "groq", "meta", "minimax", "mistral", "modelgo"]);
 
-export interface HostMemory { totalBytes: number; availableBytes: number; swapFreeBytes: number; oomKills: number | null; fullStall10: number | null }
+export interface HostMemory { taskLimit?: number; availableTasks?: number; containerLimited?: boolean; totalBytes: number; availableBytes: number; swapFreeBytes: number; oomKills: number | null; fullStall10: number | null }
 
 const procText = (path: string) => readFileSync(path, "utf8");
 
@@ -46,8 +49,8 @@ export function readHostMemory(read: (path: string) => string = procText): HostM
   const totalBytes = field("MemTotal"), availableBytes = field("MemAvailable");
   if (totalBytes === null || availableBytes === null) return null;
   const number = (path: string, pattern: RegExp) => { try { const found = pattern.exec(read(path)); return found ? Number(found[1]) : null; } catch { return null; } };
-  return { totalBytes, availableBytes, swapFreeBytes: field("SwapFree") ?? 0,
-    oomKills: number("/proc/vmstat", /^oom_kill (\d+)$/m), fullStall10: number("/proc/pressure/memory", /^full avg10=([\d.]+)/m) };
+  return containerMemory({ totalBytes, availableBytes, swapFreeBytes: field("SwapFree") ?? 0,
+    oomKills: number("/proc/vmstat", /^oom_kill (\d+)$/m), fullStall10: number("/proc/pressure/memory", /^full avg10=([\d.]+)/m) }, read);
 }
 
 /** A process's proportional set size: each page it shares counts as its share among the processes sharing it. Null where
@@ -80,6 +83,28 @@ export function processGroupBytes(list: () => string[] = () => readdirSync("/pro
   return groups;
 }
 
+/** Kernel task slots include threads, not only process leaders. */
+export function processGroupTasks(list: () => string[] = () => readdirSync("/proc"), read: (path: string) => string = procText): Map<number, number> {
+  const groups = new Map<number, number>();
+  let pids: string[];
+  try { pids = list(); } catch { return groups; }
+  for (const pid of pids) {
+    if (!/^\d+$/.test(pid)) continue;
+    try {
+      const stat = read(`/proc/${pid}/stat`);
+      const group = Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[2]);
+      const threads = Number(/^Threads:\s+(\d+)$/m.exec(read(`/proc/${pid}/status`))?.[1]);
+      if (Number.isSafeInteger(group) && group > 0 && Number.isSafeInteger(threads) && threads >= 0) groups.set(group, (groups.get(group) ?? 0) + threads);
+    } catch {}
+  }
+  return groups;
+}
+
+// Startup reservations, not measured per-provider requirements. Actual tracked tasks offset the process reservation.
+export const ENGINE_START_TASKS = 64, SESSION_START_TASKS = 16, BROWSER_START_TASKS = 48;
+export interface ProcessWait { available: number; required: number; limit: number }
+export const processWaitText = (wait: ProcessWait) => `Waiting for process/thread capacity: ${wait.available} task slots are available under the container limit of ${wait.limit}, and this start needs ${wait.required} including reserved headroom. It starts by itself when slots are free.`;
+
 const tasks = (count: number) => `${count} ${count === 1 ? "task" : "tasks"}`;
 const running = (count: number) => `${tasks(count)} ${count === 1 ? "is" : "are"} running on this Cloud`;
 const memoryStopKey = (browser: boolean, detail = false) => detail
@@ -95,8 +120,8 @@ export const memoryStillWaitingText = (count: number) => `Still waiting for memo
 /** How a wait reads to the person, in their language, and where else it shows. */
 export interface EngineWaits {
   /** `limit`: the plan's most turns at once, when that is what this one waits for rather than memory. */
-  text(threadId: string, wait: { first: boolean; running: number; ahead: number; limit?: number }): string;
-  began(threadId: string, wait: { running: number; ahead: number; limit?: number }): void;
+  text(threadId: string, wait: { first: boolean; running: number; ahead: number; limit?: number; processes?: ProcessWait }): string;
+  began(threadId: string, wait: { running: number; ahead: number; limit?: number; processes?: ProcessWait }): void;
   /** Whether anything is waiting for memory changed. */
   changed(): void;
 }
@@ -162,6 +187,7 @@ export interface EngineMemoryOptions {
   enabled: boolean;
   read?: () => HostMemory | null;
   groups?: () => Map<number, number>;
+  taskGroups?: () => Map<number, number>;
   now?: () => number;
   signal?: (pid: number, signal: NodeJS.Signals) => void;
   log?: (line: string) => void;
@@ -172,6 +198,7 @@ export class EngineMemory {
   readonly enabled: boolean;
   private readonly read: () => HostMemory | null;
   private readonly groups: () => Map<number, number>;
+  private readonly taskGroups: () => Map<number, number>;
   private readonly now: () => number;
   private readonly signal: (pid: number, signal: NodeJS.Signals) => void;
   private readonly log: (line: string) => void;
@@ -179,6 +206,8 @@ export class EngineMemory {
   private readonly context = new AsyncLocalStorage<string>();
   private readonly engines = new Map<number, Engine>();
   private readonly active = new Set<string>();
+  private readonly peaks = new Map<string, { bytes: number; shared: boolean; runId: string; startedAt: number; samples: number; turnId?: string }>();
+  private report: ((report: RunMemoryReport) => void) | undefined;
   /** Threads admitted in the last RESERVE_MS: when, and what they were let in for. */
   private readonly reserved = new Map<string, { at: number; start: "process" | "session"; browser: boolean; browserSince?: number }>();
   private readonly queue: Waiter[] = [];
@@ -203,11 +232,14 @@ export class EngineMemory {
     this.enabled = options.enabled;
     this.read = options.read ?? (() => readHostMemory());
     this.groups = options.groups ?? (() => processGroupBytes());
+    this.taskGroups = options.taskGroups ?? (() => processGroupTasks());
     this.now = options.now ?? Date.now;
     this.signal = options.signal ?? ((pid, signal) => process.kill(-pid, signal));
     this.log = options.log ?? ((line) => console.warn(`memory: ${line}`));
     this.tickMs = options.tickMs ?? TICK_MS;
   }
+
+  useReports(report: (report: RunMemoryReport) => void): void { this.report = report; }
 
   useBrowsers(browsers: EngineBrowsers): void { this.browsers = browsers; }
 
@@ -278,7 +310,11 @@ export class EngineMemory {
     if (child.pid) this.engines.get(child.pid)?.threads.delete(threadId);
   }
 
-  turnStarted(threadId: string): void { if (this.enabled) this.active.add(threadId); }
+  turnStarted(threadId: string): void {
+    if (!this.enabled) return;
+    if (!this.peaks.has(threadId)) this.peaks.set(threadId, { bytes: 0, shared: false, runId: randomUUID(), startedAt: this.now(), samples: 0 });
+    this.active.add(threadId);
+  }
 
   /** This thread's engine process is still running (an engine keeps one between turns), so its turn starts no new one. */
   hasEngine(threadId: string): boolean {
@@ -286,8 +322,23 @@ export class EngineMemory {
     return false;
   }
 
-  turnEnded(threadId: string): void {
+  bindTurn(threadId: string, turnId: string): void {
+    const peak = this.peaks.get(threadId);
+    if (peak && peak.turnId === undefined) peak.turnId = turnId;
+  }
+
+  turnEnded(threadId: string, expectedTurnId?: string): void {
     if (!this.enabled) return;
+    const bound = this.peaks.get(threadId)?.turnId;
+    if (expectedTurnId && bound && expectedTurnId !== bound) return;
+    this.samplePeaks();
+    const peak = this.peaks.get(threadId);
+    if (peak) {
+      const report: RunMemoryReport = { runId: peak.runId, threadId, ...(peak.turnId ? { turnId: peak.turnId } : {}), startedAt: peak.startedAt, endedAt: this.now(), sampledProcessGroupPeakBytes: peak.samples ? peak.bytes : null, sharedProcess: peak.shared, samples: peak.samples };
+      this.log(`run-memory ${JSON.stringify(report)}`);
+      try { this.report?.(report); } catch { this.log("run-memory report could not be saved"); }
+    }
+    this.peaks.delete(threadId);
     this.active.delete(threadId);
     this.reserved.delete(threadId);
     this.pressure.delete(threadId);
@@ -342,14 +393,15 @@ export class EngineMemory {
         }
         if (announced === null || this.now() - announced >= NOTICE_REPEAT_MS) {
           const others = this.othersBusy(threadId), first = announced === null, ahead = this.order().indexOf(waiter);
-          const limit = this.capped(threadId), wait = { running: others, ahead, ...(limit === undefined ? {} : { limit }) };
+          const limit = this.capped(threadId), processes = start === "turn" ? undefined : this.processWait(start, threadId);
+          const wait = { running: others, ahead, ...(limit === undefined ? {} : { limit }), ...(limit === undefined && processes ? { processes } : {}) };
           if (first) {
             this.waitingSince.set(waiter, this.now());
             this.ledger.note(this.now(), "waits");
             this.waits?.began(threadId, wait);
             if (this.waitingSince.size === 1) this.waits?.changed();
           }
-          notify(this.waits?.text(threadId, { first, ...wait }) ?? (first ? memoryWaitText(others) : memoryStillWaitingText(others)));
+          notify(this.waits?.text(threadId, { first, ...wait }) ?? (wait.processes ? processWaitText(wait.processes) : first ? memoryWaitText(others) : memoryStillWaitingText(others)));
           announced = this.now();
         }
         await new Promise<void>((resolve) => {
@@ -395,6 +447,7 @@ export class EngineMemory {
   /** Every couple of seconds while engines run: notes short memory against the running turns, and stops an engine before
    * the machine runs out: an idle one first, else the newest of two or more busy ones. */
   tick(): void {
+    this.samplePeaks();
     const memory = this.read();
     if (!memory) return;
     if ((memory.fullStall10 ?? 0) >= STALL_PERCENT) this.ledger.note(this.now(), "stalled");
@@ -428,6 +481,18 @@ export class EngineMemory {
 
   private free(memory: HostMemory): number { return memory.availableBytes + memory.swapFreeBytes / 2; }
 
+  private samplePeaks(): void {
+    if (!this.peaks.size) return;
+    const groups = this.groups();
+    for (const [pid, engine] of this.engines) {
+      const bytes = groups.get(pid) ?? 0;
+      for (const threadId of this.working(engine)) {
+        const peak = this.peaks.get(threadId);
+        if (peak && groups.has(pid)) { peak.samples++; peak.bytes = Math.max(peak.bytes, bytes); peak.shared ||= engine.threads.size > 1; }
+      }
+    }
+  }
+
   private working(engine: Engine): string[] {
     return [...engine.threads].filter((threadId) => this.active.has(threadId));
   }
@@ -437,9 +502,29 @@ export class EngineMemory {
       .sort((a, b) => a.startedAt - b.startedAt)[0] ?? null;
   }
 
+  private processWait(start: "process" | "session", threadId: string, memory = this.read()): ProcessWait | undefined {
+    if (!memory || memory.taskLimit === undefined || memory.availableTasks === undefined) return undefined;
+    const at = this.now(), groups = this.taskGroups();
+    const live = [...this.engines.entries()].filter(([, engine]) => !engine.stopping);
+    let held = 0;
+    const browsers = new Set<string>();
+    for (const [id, reservation] of this.reserved) {
+      if (at - reservation.at >= RESERVE_MS) continue;
+      const pid = live.find(([, engine]) => engine.threads.has(id))?.[0];
+      held += reservation.start === "session" ? SESSION_START_TASKS : Math.max(0, ENGINE_START_TASKS - (pid === undefined ? 0 : groups.get(pid) ?? 0));
+      const browser = this.browsers?.which?.(id) ?? id;
+      if (reservation.browser && !browsers.has(browser)) { browsers.add(browser); held += BROWSER_START_TASKS; }
+    }
+    const browser = this.browsers?.which?.(threadId) ?? threadId;
+    const need = (start === "session" ? SESSION_START_TASKS : ENGINE_START_TASKS) + (this.browserStarts(threadId) && !browsers.has(browser) ? BROWSER_START_TASKS : 0);
+    const required = Math.max(32, Math.ceil(memory.taskLimit * 0.1)) + held + need;
+    return memory.availableTasks >= required ? undefined : { available: memory.availableTasks, required, limit: memory.taskLimit };
+  }
+
   private room(start: "process" | "session", threadId: string): "admit" | "wait" | Engine {
     const memory = this.read();
     if (!memory) return "admit";
+    if (this.processWait(start, threadId, memory)) return "wait";
     const groups = this.groups(), at = this.now();
     const live = [...this.engines.entries()].filter(([, engine]) => !engine.stopping);
     const measured = live.filter(([, engine]) => at - engine.startedAt >= SETTLED_MS).map(([pid]) => groups.get(pid)).filter((bytes) => bytes !== undefined);
@@ -465,7 +550,7 @@ export class EngineMemory {
     const newBrowser = this.browserStarts(threadId) && !heldBrowsers.has(this.browsers?.which?.(threadId) ?? threadId);
     const need = (start === "session" ? SESSION_BYTES : process) + (newBrowser ? BROWSER_BYTES : 0);
     if (this.free(memory) - this.floor(memory) - held >= need) return "admit";
-    return this.idle() ?? (this.othersBusy(threadId) === 0 ? "admit" : "wait");
+    return this.idle() ?? (this.othersBusy(threadId) === 0 && !memory.containerLimited ? "admit" : "wait");
   }
 
   private browserStarts(threadId: string): boolean { return this.browsers?.starts(threadId) === true; }
@@ -486,6 +571,7 @@ export class EngineMemory {
   }
 
   private exited(pid: number, engine: Engine, signal: NodeJS.Signals | null): void {
+    this.samplePeaks();
     if (this.engines.get(pid) === engine) this.engines.delete(pid);
     const working = this.working(engine);
     if (signal === "SIGKILL" && !engine.stopping && working.length && this.kernelKilled(this.read()?.oomKills ?? null)) {
@@ -535,7 +621,12 @@ export class EngineMemory {
   }
 }
 
-export const engineMemory = new EngineMemory({ enabled: (process.env.OMB_CLOUD_ROLE === "home" || process.env.OMB_CLOUD_ROLE === "team") && process.platform === "linux" });
+/** Self-hosted Linux controllers can opt into the same admission checks without adopting a hosted Cloud role. */
+export function engineMemoryEnabled(env: { OMB_MEMORY_GATE?: string; OMB_CLOUD_ROLE?: string } = process.env, platform: NodeJS.Platform = process.platform): boolean {
+  return platform === "linux" && (env.OMB_MEMORY_GATE === "1" || env.OMB_CLOUD_ROLE === "home" || env.OMB_CLOUD_ROLE === "team");
+}
+
+export const engineMemory = new EngineMemory({ enabled: engineMemoryEnabled() });
 
 /**
  * One engine's adapter on a Cloud home: a turn that needs a new engine process waits for memory first (saying so in the
@@ -551,9 +642,10 @@ export function withEngineMemory(instance: ProviderInstance, memory: EngineMemor
   const event = (threadId: string, fields: Record<string, unknown>) =>
     ({ eventId: newEventId(), provider: instance.driverKind, threadId, createdAt: new Date().toISOString(), ...fields }) as RuntimeEvent;
   adapter.onEvent((item) => {
+    if (item.turnId) memory.bindTurn(item.threadId, item.turnId);
     if (item.type !== "turn.completed") return;
     // Once every listener has seen this event: they read the stop while it is delivered.
-    queueMicrotask(() => { explained.delete(item.threadId); memory.turnEnded(item.threadId); });
+    queueMicrotask(() => { explained.delete(item.threadId); memory.turnEnded(item.threadId, item.turnId); });
   });
   const present = (item: RuntimeEvent): RuntimeEvent[] => {
     const stopped = memory.stopFailure(item.threadId, item.type === "runtime.error" ? item.message.slice(0, 200) : undefined);
@@ -600,7 +692,9 @@ export function withEngineMemory(instance: ProviderInstance, memory: EngineMemor
       }
       memory.turnStarted(threadId);
       try {
-        return await memory.within(threadId, () => adapter.sendTurn(driverAdmits ? { ...input, engineAdmission: admit } : input));
+        const result = await memory.within(threadId, () => adapter.sendTurn(driverAdmits ? { ...input, engineAdmission: admit } : input));
+        memory.bindTurn(threadId, result.turnId);
+        return result;
       } catch (error) {
         memory.turnEnded(threadId);
         throw error;

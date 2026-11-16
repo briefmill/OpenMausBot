@@ -1,5 +1,6 @@
-import { useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowUp, Check, Clock3, LoaderCircle, Square, X } from "lucide-react";
+import { useComposerDictation } from "@/lib/use-composer-dictation";
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { ArrowUp, Check, Clock3, LoaderCircle, Mic, Square, X } from "lucide-react";
 import { botButton, type BotButton } from "@/lib/bot-button";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -170,7 +171,7 @@ export function AskChoices({ choices, label, onPick, sending = null, picked = []
 }
 
 /** The person's own words: a field and a send button in the asking bot's colour. */
-export function AskReply({ label, placeholder, color, onSend, sending = false, value, onChange, maxLength, multiline = false }: {
+export function AskReply({ label, placeholder, color, onSend, sending = false, value, onChange, maxLength, multiline = false, dictation = false }: {
   label: string;
   placeholder: string;
   color: MausColor | undefined;
@@ -180,8 +181,10 @@ export function AskReply({ label, placeholder, color, onSend, sending = false, v
   onChange(text: string): void;
   maxLength?: number;
   multiline?: boolean;
+  dictation?: boolean;
 }) {
-  const ready = value.trim().length > 0 && !sending;
+  const [recording, setRecording] = useState(false);
+  const ready = value.trim().length > 0 && !sending && !recording;
   const send = (event?: FormEvent) => {
     event?.preventDefault();
     if (ready) onSend(value.trim());
@@ -206,11 +209,26 @@ export function AskReply({ label, placeholder, color, onSend, sending = false, v
         className={cn("block min-h-8 flex-1 resize-none bg-transparent py-1.5 text-[14px] leading-5 text-ink outline-none placeholder:text-ink-tertiary [field-sizing:content] pointer-coarse:min-h-9",
           multiline ? "max-h-40" : "max-h-28")}
       />
+      {dictation && !sending && <QuestionReplyDictation value={value} onChange={onChange} maxLength={maxLength} color={color} onRecording={setRecording} />}
       <button type="submit" disabled={!ready} aria-label={t("chat.send")} title={t("chat.send")} aria-busy={sending || undefined} {...button}>
         {sending ? <LoaderCircle size={16} aria-hidden="true" className="motion-safe:animate-spin" /> : <ArrowUp size={16} strokeWidth={2.4} aria-hidden="true" />}
       </button>
     </form>
   );
+}
+
+function QuestionReplyDictation({ value, onChange, maxLength, color, onRecording }: {
+  value: string; onChange(text: string): void; maxLength?: number; color?: MausColor; onRecording(recording: boolean): void;
+}) {
+  const fieldId = useId();
+  const changed = useRef({ onChange, maxLength }); changed.current = { onChange, maxLength };
+  const hear = useCallback((text: string) => changed.current.onChange(text.slice(0, changed.current.maxLength)), []);
+  const speech = useComposerDictation({ draftId: `question:${fieldId}`, text: value, onText: hear });
+  useEffect(() => { onRecording(speech.recording); return () => onRecording(false); }, [speech.recording, onRecording]);
+  if (!speech.ready) return null;
+  return <button type="button" onClick={() => { speech.toggle(); onRecording(!speech.recording); }} aria-label={t(speech.recording ? "composer.dictation.stop" : "composer.dictation.start")} title={t(speech.recording ? "composer.dictation.stopHint" : "composer.dictation.hint")} {...askPrimary(color, ASK_ICON_SHAPE)}>
+    {speech.recording ? <Square size={14} className="fill-current" /> : <Mic size={16} />}
+  </button>;
 }
 
 /** Why an answer did not go, under the card, until the next try. */

@@ -393,3 +393,22 @@ describe("the held-secret scrubber", () => {
     expect(redactSecretsInText("My password is fake-hunter2, enjoy.")).toBe("My password is fake-hunter2, enjoy.");
   });
 });
+
+it("preserves explicit department bot grants and workspace grants across vault reopen and revocation", () => {
+  const store = new VaultStore({ dataDir: dir });
+  const scoped = store.saveSecret({ name: "Synthetic department key", value: "fake-department-canary", source: "settings", bots: ["department-builder", "department-reviewer"] });
+  const workspace = store.saveSecret({ name: "Synthetic workspace key", value: "fake-workspace-canary", source: "settings", bots: "all" });
+  const reopened = new VaultStore({ dataDir: dir });
+  for (const delivery of ["ref", "file"] as const) {
+    for (const bot of ["department-builder", "department-reviewer"]) {
+      expect(reopened.usableSecret("Synthetic department key", bot, delivery, TEAM_READER)?.id).toBe(scoped.id);
+    }
+    expect(reopened.usableSecret("Synthetic department key", "outside-bot", delivery, TEAM_READER)).toBeNull();
+    expect(reopened.usableSecret("Synthetic workspace key", "outside-bot", delivery, TEAM_READER)?.id).toBe(workspace.id);
+    expect(reopened.usableSecret("Synthetic workspace key", "outside-bot", delivery, { person: null, team: false })).toBeNull();
+  }
+  reopened.updateSecret(scoped.id, { bots: ["department-builder"] });
+  const afterRevocation = new VaultStore({ dataDir: dir });
+  expect(afterRevocation.usableSecret("Synthetic department key", "department-reviewer", "ref", TEAM_READER)).toBeNull();
+  expect(afterRevocation.usableSecret("Synthetic department key", "department-builder", "ref", TEAM_READER)?.id).toBe(scoped.id);
+});

@@ -5,7 +5,7 @@
 // private files; the ref secret only in the MCP server settings it was saved into.
 import { randomBytes } from "node:crypto";
 import { type ChildProcess, spawn } from "node:child_process";
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { createInterface } from "node:readline";
@@ -25,6 +25,7 @@ const bootstrap = randomBytes(32).toString("base64url");
 let home = "";
 let base = "";
 let child: ChildProcess;
+let startServer: () => Promise<void>;
 let log = "";
 let owner = "";
 const said: string[] = [];
@@ -109,6 +110,7 @@ await import(${JSON.stringify(pathToFileURL(join(SERVER_DIR, "testing", "fake-cl
   const imageEnv = { PATH: process.env.PATH, OMB_DUCKDB_DIR: join(home, "empty-tree"), ...contract };
   const { server, secrets } = cloudHomeChildEnvironments(cloudHomeConfiguration(imageEnv)!, imageEnv, home);
   const offline = `data:text/javascript,${encodeURIComponent('const real = globalThis.fetch; globalThis.fetch = async (url, init) => String(url).startsWith("http://127.0.0.1:") ? real(url, init) : new Response("offline fixture", { status: 503 });')}`;
+  startServer = async () => {
   child = spawnWithSecrets(process.execPath, ["--import", offline, join(SERVER_DIR, "index.ts")], {
     ...server, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1), USERPROFILE: home,
     ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
@@ -122,6 +124,8 @@ await import(${JSON.stringify(pathToFileURL(join(SERVER_DIR, "testing", "fake-cl
     if (Date.now() > deadline) throw new Error(`the Cloud home did not start:\n${log}`);
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+  };
+  await startServer();
   owner = await pairOwner();
 }, hostTimeout(30_000));
 
@@ -211,4 +215,45 @@ it("keeps a file secret and a ref secret out of every record, and the bot uses e
     expect(where).not.toContain(FILE_CANARY);
     expect(where).not.toContain(REF_CANARY);
   }
+}, hostTimeout(60_000));
+
+it("keeps an unanswered credential card usable after interruption and a server restart", async () => {
+  const bot = (await api("POST", "/api/bots", { name: "Interrupted credential fixture", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } })).body.bot;
+  rmSync(join(home, "spawn.json"), { force: true });
+  const tools = await proxyFor(async () => {
+    expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "Request the synthetic fixture credential." })).status).toBe(202);
+  });
+  await tools.call("request_credential", { label: "Interruption fixture key", reason: "Isolated persistence test.", delivery: "file" });
+  const cards = async () => (await api("GET", `/api/threads/${bot.threadId}/messages`)).body.messages.filter((message: any) => message.kind === "secret");
+  const card = (await cards()).at(-1);
+  expect(card?.secret?.label).toBe("Interruption fixture key");
+  const pendingInInbox = async () => {
+    const response = await api("GET", "/api/inbox");
+    expect(response.status).toBe(200);
+    return response.body.rows.find((row: any) => row.origin?.threadId === bot.threadId && row.origin?.messageId === card.id);
+  };
+  expect(await pendingInInbox()).toMatchObject({ tab: "needs-you", secret: { label: "Interruption fixture key" } });
+  expect((await api("POST", `/api/bots/${bot.id}/interrupt`)).status).toBe(200);
+  for (const proxy of proxies) proxy.kill();
+  await waitForExit(child, { signal: "SIGTERM" });
+  await startServer();
+  expect((await cards()).some((message: any) => message.id === card.id)).toBe(true);
+  expect(await pendingInInbox()).toMatchObject({ tab: "needs-you", secret: { label: "Interruption fixture key" } });
+  const saved = await api("POST", `/api/bots/${bot.id}/secret-cards/${card.id}/save`, { threadId: bot.threadId, value: FILE_CANARY });
+  expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+  expect((await pendingInInbox())?.tab).not.toBe("needs-you");
+  expect(JSON.stringify((await cards()))).not.toContain(FILE_CANARY);
+  await api("POST", `/api/bots/${bot.id}/interrupt`);
+  rmSync(join(home, "spawn.json"), { force: true });
+  const nextTools = await proxyFor(async () => {
+    expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "Use the saved synthetic fixture credential." })).status).toBe(202);
+  });
+  const beforeCount = (await cards()).length;
+  const reused = await nextTools.call("request_credential", { label: "Interruption fixture key", reason: "Isolated persistence test.", delivery: "file" });
+  expect(reused.isError).toBe(false);
+  const savedFile = /to the file (\S+vault-[\w-]+)\./u.exec(reused.text)?.[1];
+  expect(savedFile, reused.text).toBeDefined();
+  expect(readFileSync(savedFile!, "utf8")).toBe(FILE_CANARY);
+  expect((await cards()).length).toBe(beforeCount);
+  expect(reused.text).not.toContain(FILE_CANARY);
 }, hostTimeout(60_000));

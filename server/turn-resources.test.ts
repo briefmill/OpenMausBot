@@ -142,3 +142,16 @@ describe("wait estimate history", () => {
     expect(leases.waitEstimateMs("computer:vm:other")).toBeUndefined();
   });
 });
+
+it("holds 34 independent desktops while rejecting foreign turns on each", () => {
+  const leases = new TurnResources();
+  const jobs = Array.from({ length: 34 }, (_, i) => ({ resource: `computer:bot-${i}`, owner: { threadId: `task-${i}`, generation: `run-${i}` } }));
+  for (const job of jobs) expect(leases.claim(job.resource, job.owner)).toBe(true);
+  for (const [i, job] of jobs.entries()) {
+    expect(leases.owns(job.resource, job.owner)).toBe(true);
+    expect(leases.claim(job.resource, jobs[(i + 1) % jobs.length]!.owner)).toBe(false);
+  }
+  leases.release(jobs[0]!.owner);
+  expect(leases.free(jobs[0]!.resource)).toBe(true);
+  for (const job of jobs.slice(1)) expect(leases.owns(job.resource, job.owner)).toBe(true);
+});

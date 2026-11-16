@@ -1,3 +1,4 @@
+import { messageReviewRoutes } from "./message-review.ts";
 // server/index.ts runs this right after the auth gate, so every handler here is already authenticated.
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { json, readBody } from "../harness/http.ts";
@@ -24,7 +25,7 @@ export interface RouteContext {
 export type RouteHandler = (ctx: RouteContext) => Promise<typeof PASS | void>;
 
 /** Modules with no wiring from index.ts are listed here; index.ts pushes the rest. */
-export const ROUTES: RouteHandler[] = [cloudSyncRoutes, ownMcpHttpRoutes, webPanelRoutes, announcementRoutes];
+export const ROUTES: RouteHandler[] = [messageReviewRoutes, cloudSyncRoutes, ownMcpHttpRoutes, webPanelRoutes, announcementRoutes];
 
 /** True means stop routing. A handler that wrote a response but returned PASS still counts as answered. */
 export async function dispatchRoutes(routes: readonly RouteHandler[], ctx: RouteContext): Promise<boolean> {

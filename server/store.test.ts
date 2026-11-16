@@ -42,6 +42,18 @@ describe("Store", () => {
     expect(new Store(selection).bot(bot.id)).not.toHaveProperty("toolScope");
   });
 
+  it("keeps an explicit all-tools choice through profile edits, new tasks and restart", () => {
+    const store = new Store(selection);
+    const bot = store.createBot({ name: "All tools" });
+    store.patchBot(bot.id, { toolScope: { allow: [] } });
+    store.patchBot(bot.id, { toolScope: undefined });
+    store.patchBotProfile(bot.id, { title: "Updated title" });
+    store.patchBot(bot.id, { description: "Routine setup" });
+    store.createTask(bot.id, "Scheduled fixture");
+    expect(new Store(selection).bot(bot.id)?.toolScope).toBeUndefined();
+    expect(allowsTool(new Store(selection).bot(bot.id)?.toolScope, { kind: "mcp", server: "later-server", name: "later-tool" })).toBe(true);
+  });
+
   it("gives an app the bot's Apps switch turned on its tools, on load and whenever the switch changes", () => {
     const store = new Store(selection);
     const bot = store.createBot({ name: "Mail reader" });

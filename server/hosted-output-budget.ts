@@ -1,0 +1,5 @@
+const CAPPED_BOTS = new Set(["004e47f0-e544-4760-84fa-f3212b45b8ac", "10b9d099-5fdc-4524-90e3-3413fa8523a3", "1a1685a7-fd0d-4671-8a3b-bb7daeb8a6b7", "2eb93d08-53fb-4359-95b4-f1a232efbdf5", "3156b01a-d55c-4233-904e-8ee7e28de3be", "3c317fcf-f69f-40ce-a624-009903d6ad7f", "4ea91bd8-77eb-4eec-92e4-6eceabc492e6", "60baf152-6dbf-462b-a98a-de9e2cc11c0e", "6c23d95e-8af0-4830-a995-aa5776272213", "6f0de420-610f-441e-a23b-863b298c1e42", "75a472a5-febf-4546-91ab-0fe6fee5a44f", "7ffb8ed9-216f-44da-914a-6554effc5248", "8ca32e3b-58d1-42b7-a062-985dfb3703f0", "96dbaa07-8a76-4b9a-a5c0-4803794a9829", "a207771f-c225-4c56-9eb6-6e971bd2e04c", "aa68669a-6f8a-4458-96cf-872b841393ba", "b8072710-2ac6-42f4-9289-7602af801b85", "c92c6a2e-2370-412d-b384-d73674baef14", "cd638715-7257-4d4b-9ba3-651bd8e9c966", "dc800cc9-5594-4873-a605-2cab1a7f7ffa", "e0d3a8d9-d9b1-4493-8615-09717a3a72db", "e0ec5371-b970-4439-b106-0e7ef2de3e70"]);
+export function hostedOutputBudget(botId: string | undefined, apiUrl: string): number | undefined {
+  try { return botId && CAPPED_BOTS.has(botId) && new URL(apiUrl).hostname === "openrouter.ai" ? 8192 : undefined; }
+  catch { return undefined; }
+}

@@ -229,6 +229,38 @@ describe.each(roles)("one bot's threads on a %s server", (role) => {
   }, 90_000);
 });
 
+describe("34 independent API-runtime bots", () => {
+  let f: Fixture;
+  afterEach(async () => { await f?.stop(); });
+
+  it("holds 34 distinct bot jobs in flight before any provider reply finishes", async () => {
+    f = new Fixture("desktop");
+    await f.start();
+    const jobs: Array<{ botId: string; threadId: string; text: string }> = [];
+    for (let i = 0; i < 34; i++) {
+      const job = await botWithThreads(f, { instanceId: "openaiCompat", model: "fixture-model" }, 1, `Independent ${i + 1}`);
+      jobs.push({ botId: job.botId, threadId: job.threads[0]!, text: `INDEPENDENT-34-JOB-${String(i + 1).padStart(2, "0")}-END` });
+    }
+    expect(new Set(jobs.map(job => job.botId)).size).toBe(34);
+    expect(new Set(jobs.map(job => job.threadId)).size).toBe(34);
+    await Promise.all(jobs.map(job => send(f, job.botId, job.threadId, job.text)));
+    await expect.poll(() => f.chatInFlight.length, { timeout: 30_000, interval: 100 }).toBe(34);
+    for (const job of jobs) {
+      expect(f.chatInFlight.filter(call => call.thread.includes(job.text))).toHaveLength(1);
+      expect(await busyThreads(f, job.botId)).toEqual([job.threadId]);
+    }
+    f.release();
+    await expect.poll(async () => {
+      const fleet = (await f.api("GET", "/api/bots?messages=0")).body.bots;
+      return jobs.filter(job => fleet.find((bot: any) => bot.id === job.botId)?.busy).length;
+    }, { timeout: 30_000, interval: 100 }).toBe(0);
+    for (const job of jobs) {
+      const messages = (await f.api("GET", `/api/threads/${job.threadId}/messages?limit=30`)).body.messages;
+      expect(messages.some((message: any) => message.role === "bot" && message.kind === "text" && message.text === "done")).toBe(true);
+    }
+  }, 120_000);
+});
+
 /** An agent-browser stand-in answering MCP: no Chrome, no page. */
 function inertBrowser(dir: string) {
   const browser = join(dir, "agent-browser");

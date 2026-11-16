@@ -275,6 +275,17 @@ describe("botPatch", () => {
     expect(botPatch(priya, echo, "Launch Room")).toEqual({ patch: { toolScope: { deny: ["mcp:mail:*"] } }, changes: ["tools changed"] });
   });
 
+  it("leaves existing tool selection untouched when a team update omits tools", () => {
+    const { tools: _tools, ...unchangedTools } = same;
+    for (const toolScope of [undefined, { deny: [] }, { allow: ["mcp:notes:read"] }]) {
+      const current = { ...echo, toolScope };
+      const before = structuredClone(current);
+      const result = botPatch({ ...unchangedTools, title: "Updated title" }, current, "Launch Room");
+      expect(result.patch).toEqual({ title: "Updated title" });
+      expect(result.patch).not.toHaveProperty("toolScope");
+      expect(current).toEqual(before);
+    }
+  });
   it("reads every way of selecting every tool as the same, and clears a selection to get there", () => {
     const everything: DesiredBot = { ...same, tools: null };
     expect(botPatch(everything, { ...echo, toolScope: undefined }, "Launch Room")).toEqual({ patch: {}, changes: [] });

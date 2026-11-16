@@ -1,4 +1,4 @@
-import { AppWindow, FolderOpen, Globe, Puzzle, Rocket, UsersRound, Zap } from "lucide-react";
+import { AppWindow, Brain, FolderOpen, Globe, Puzzle, Rocket, UsersRound, Zap } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 
 import { useAppTriggers } from "@/lib/app-triggers";
@@ -188,7 +188,7 @@ export function SidebarFooterNav({
           label={panel.name}
           iconsOnly={iconsOnly || toolbar}
           active={state.activeView === "web-panel" && state.webPanelId === panel.id}
-          icon={(active) => (panel.page ? <AppWindow size={iconSize} className={tone(active)} /> : <Globe size={iconSize} className={tone(active)} />)}
+          icon={(active) => (panel.url === "https://graphify-brain-production.up.railway.app/viewer" ? <Brain size={iconSize} className={tone(active)} /> : panel.page ? <AppWindow size={iconSize} className={tone(active)} /> : <Globe size={iconSize} className={tone(active)} />)}
           onClick={() => dispatch({ type: "showWebPanel", id: panel.id })}
         />
       ))}

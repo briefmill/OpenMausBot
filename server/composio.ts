@@ -1,3 +1,5 @@
+import { workspaceAccountSession, type WorkspaceBinding } from "./hosted-workspace-policy.ts";
+import { trustedSessionMcpUrl } from "./composio-session.ts";
 import type { AppConfig } from "./config.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -259,7 +261,7 @@ export async function relayMcp(
   cfg: AppConfig,
   payload: JsonValue,
   transportSessionId?: string,
-  beforeSend?: () => void, signal?: AbortSignal, as?: BrokerAccess,
+  beforeSend?: () => void, signal?: AbortSignal, as?: BrokerAccess, scope?: WorkspaceBinding,
 ): Promise<{ status: number; bytes: Uint8Array; contentType: string; transportSessionId?: string }> {
   const apiKey = as ? null : projectApiKey(cfg);
   let url: string;
@@ -269,11 +271,12 @@ export async function relayMcp(
     accept: "application/json, text/event-stream",
   });
   if (apiKey) {
-    const session = await ensureProjectSession(cfg);
+    const session = scope ? await workspaceAccountSession(scope, apiBase(), apiKey, cfg.composio?.userId || "", trustedSessionMcpUrl) : await ensureProjectSession(cfg);
     url = session.mcp.url;
     headers.set("x-api-key", apiKey);
     identity = backendFingerprint("project-mcp", url, apiKey);
   } else {
+    if (scope) throw Error("Pinned connected accounts require a direct Composio project connection");
     const broker = as ?? brokerAccess();
     if (!broker) throw new Error("Connected apps are unavailable");
     url = `${broker.url}/v1/mcp`;
@@ -309,7 +312,7 @@ export async function relayMcp(
   const toolCall = typeof payload === "object" && payload !== null && !Array.isArray(payload) && payload.method === "tools/call";
   const toolkit = toolCall ? noManagedAuthToolkit(new TextDecoder().decode(raw)) : null;
   const bytes = toolkit
-    ? await withNoManagedAuthNote(raw, contentType, toolkit, apiKey ? () => sessionForToolkit(cfg, toolkit, { fresh: true }) : null)
+    ? await withNoManagedAuthNote(raw, contentType, toolkit, apiKey && !scope ? () => sessionForToolkit(cfg, toolkit, { fresh: true }) : null)
     : raw;
   return { status: response.status, bytes, contentType, transportSessionId: nextTransportSessionId };
 }

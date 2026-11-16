@@ -209,7 +209,7 @@ export function QuestionCard({
       )}
       {freeText && (
         <div className={current.options.length > 0 ? "mt-2" : undefined}>
-          <AskReply
+          <AskReply dictation
             label={current.options.length ? t("question.somethingElse") : current.question}
             placeholder={current.options.length ? t("question.somethingElse") : t("question.answerPlaceholder")}
             color={asker?.color}
@@ -260,7 +260,7 @@ function DecidedQuestion({ threadId, asker, card, questions }: { threadId: strin
       {open && (
         <div className="mt-2">
           <p dir="auto" className="mb-2 text-[13px] leading-[18px] text-ink-secondary">{question}</p>
-          <AskReply label={question} placeholder={t("question.answerPlaceholder")} color={asker?.color} value={draft} onChange={setDraft}
+          <AskReply dictation label={question} placeholder={t("question.answerPlaceholder")} color={asker?.color} value={draft} onChange={setDraft}
             onSend={send} sending={state === "sending"} maxLength={MAX_CUSTOM_ANSWER} />
           {state === "failed" && <AskError>{t("ask.error")}</AskError>}
         </div>

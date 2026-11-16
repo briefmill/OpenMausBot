@@ -1,3 +1,4 @@
+import { registerDraft } from "@/lib/browser-picker-draft";
 import { directMessageSent, roomMessageSent } from "@/lib/product-events";
 import { TeamAudienceLabel } from "./TeamSideSwitch";
 import { useComposerDictation } from "@/lib/use-composer-dictation";
@@ -502,6 +503,9 @@ export function Composer({
     refocusInput();
   };
 
+  const pickerDraft = useRef({ draftId, recording, allowImages: engineSupportsImages, imageSlots: imageSlotsLeft(attachments), imageBytes: imageBytesLeft(attachments), onFiles: pickFiles, onText: editText, getText: () => text });
+  pickerDraft.current = { draftId, recording, allowImages: engineSupportsImages, imageSlots: imageSlotsLeft(attachments), imageBytes: imageBytesLeft(attachments), onFiles: pickFiles, onText: editText, getText: () => text };
+  useEffect(() => registerDraft(() => pickerDraft.current), []);
   const hasContent = Boolean(effectiveText.trim()) || attachments.length > 0;
   const onCall = useOnCall();
   const media = useLiveMedia();
@@ -509,9 +513,8 @@ export function Composer({
   const calling = callTarget !== undefined && (onCall === callTarget || (isLiveCallRunning(media.phase) && media.botId === callTarget));
   const mayAct = useMayAct(), mayStop = !sharedChat || mayAct(profile?.tasks?.find((task) => task.threadId === threadId)?.askedBy);
   const stoppable = (busy || Boolean(!group && bot?.waitingForTeammates)) && mayStop;
-  // Simple mode's round button is the call, Send while there is text, and Stop while the bot works.
   const stopInSlot = simpleDock && stoppable && !locked && !hasContent && !calling;
-  const callShown = !simpleDock || (!hasContent && !stopInSlot);
+  const callShown = !simpleDock || !hasContent || stoppable || calling;
   const slot = slotColors(bot?.color, Boolean(group));
   // A one-to-one bot at work: Enter does the chosen follow-up and Ctrl/⌘ with it the other one. Rooms keep their own queue.
   const followUpFor = (alternate: boolean) => resolveFollowUp({ running: busy && !group && Boolean(bot), alternate, preferred: followUpDefault, canSteer }) ?? undefined;
@@ -938,7 +941,7 @@ export function Composer({
             )}
           />
           <div data-composer-actions className={cn("flex items-center", simpleDock ? "gap-2" : "gap-1", !singleRow && !simpleDock && "@max-[30rem]/composer:ml-auto", stacked && "ml-auto")}>
-          {(simpleDock ? stoppable : busy && mayStop) && !locked && (
+          {(simpleDock ? stoppable : busy && mayStop) && !locked && !recording && (
           <button
             onClick={interruptTurn}
             aria-label={t("chat.stopTurn")}
@@ -955,7 +958,7 @@ export function Composer({
             <Square size={simpleDock ? 10 : 14} className="fill-current" />
           </button>
         )}
-        {!locked && !busy && micReady && (
+        {!locked && (!busy || recording) && micReady && (
           <button
             onClick={toggleMic}
             aria-label={recording ? t("composer.dictation.stop") : t("composer.dictation.start")}
@@ -968,12 +971,12 @@ export function Composer({
             )}
             title={recording ? t("composer.dictation.stopHint") : t("composer.dictation.hint")}
           >
-            <Mic size={16} strokeWidth={1.75} absoluteStrokeWidth className="[&_rect]:fill-current" />
+            {recording ? <Square size={14} className="fill-current" /> : <Mic size={16} strokeWidth={1.75} absoluteStrokeWidth className="[&_rect]:fill-current" />}
           </button>
         )}
-        {callShown && bot && !group && <CallButton bot={bot} placement="composer" fill={advanced || singleRow ? undefined : slot.fill} ink={slot.ink} inverse={singleRow} />}
-        {callShown && group && !advanced && <GroupCallButton group={group} members={members ?? []} placement="composer" fill={slot.fill} ink={slot.ink} />}
-        {hasContent && !locked && (
+        {!recording && callShown && bot && !group && <CallButton bot={bot} placement="composer" fill={advanced || singleRow ? undefined : slot.fill} ink={slot.ink} inverse={singleRow} />}
+        {!recording && callShown && group && !advanced && <GroupCallButton group={group} members={members ?? []} placement="composer" fill={slot.fill} ink={slot.ink} />}
+        {hasContent && !locked && !recording && (
           <ComposerSendButton compact={simpleDock} waits={busy && !steersNow} label={sendNames.label} title={sendNames.title} look={slot.button}
             disabled={attachmentPending} onSend={(alternate) => send(followUpFor(alternate))} onChoose={send}
             menu={followUpFor(false) && { choices: followUpChoices(followUpDefault, canSteer), name: busyName, sendKey: sendLabel, alternateKey: alternateSendLabel(sendKey) }} />

@@ -72,6 +72,7 @@ export default defineConfig({
     hookTimeout: hostTimeout(30_000),
   },
   resolve: {
+    dedupe: ["react", "react-dom"],
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
