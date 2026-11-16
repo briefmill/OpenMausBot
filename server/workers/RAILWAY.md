@@ -16,7 +16,7 @@ Cancellation before delivery creates a durable tombstone. Duplicate generations 
 
 The optional authenticated tool endpoint journals invocation IDs under the job and generation. Completed retries return the saved result. In-flight and unknown outcomes refuse repeat dispatch; the dispatcher keeps ownership even after verified worker shutdown and emits a hold notice. Controller-selected callbacks must authorize and execute each call. Without these callbacks, the endpoint returns unavailable.
 
-Local tests cover parallel calls from separate bots, replay, cancellation, restart, foreign leases and uncertain outcomes. This relay still needs the app's account-scoped MCP sessions, saved grants and separate send approvals. It does not yet provide connected-app tools to deployed native workers.
+Local tests cover parallel calls from separate bots, replay, cancellation, restart, foreign leases and uncertain outcomes. controller-tool-policy.mjs binds a controller-mounted ChatToolSession and the existing ChatToolApproval gate to one job identity. It validates tools, preserves canonical grant keys, applies the existing safety floor and requires a matching one-shot authorization before dispatch. The real approval gate plus durable executor test opens one card, dispatches once and reuses the saved result on replay. The worker suite has 163 passes and three Linux-only skips on Windows. This relay still needs the app's account-scoped MCP sessions, saved grants and separate send approvals. It does not yet provide connected-app tools to deployed native workers.
 
 ## Controller startup
 
