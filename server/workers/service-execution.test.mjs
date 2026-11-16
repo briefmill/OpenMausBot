@@ -102,3 +102,12 @@ test('a failed service does not stop an independent service',async()=>{
   await assert.rejects(a.run(request()),/synthetic failure/);assert.equal(b.state(other),'running');
   done({ok:true});await second;a.close();b.close();
 });
+
+test('cancel-before-delivery persists a tombstone and prevents delayed execution',async()=>{
+  let calls=0;const service=setup({execute:async()=>{calls++;return{ok:true};}});
+  try{
+    assert.equal(service.cancelUnseen(identity),true);assert.equal(service.cancelUnseen(identity),false);
+    assert.equal(service.state(identity),'cancelled');await assert.rejects(service.run(request()),/consumed/);assert.equal(calls,0);
+    await service.run(request({...identity,id:'different'}));assert.equal(calls,1);
+  }finally{service.close();}
+});

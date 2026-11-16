@@ -32,6 +32,10 @@ export function createServiceExecution({file,worker,execute,stop,inspectStopped,
   };
   return{
     state,
+    cancelUnseen(identity) {
+      const encoded=identityFor(identity);
+      return db.prepare("INSERT OR IGNORE INTO executions VALUES (?,'cancelled')").run(encoded).changes===1;
+    },
     async run({identity,task,signal}) {
       const encoded=identityFor(identity);
       if(!signal || typeof signal.throwIfAborted!=='function')throw Error('Bounded service execution required');
@@ -85,6 +89,3 @@ export function createServiceExecution({file,worker,execute,stop,inspectStopped,
     close(){if(active)throw Error('Service execution active');db.close();},
   };
 }
-
-
-
