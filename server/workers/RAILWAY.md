@@ -24,7 +24,13 @@ The native MCP proxy uses this worker's pinned TLS and current lease. Its fixtur
 
 Native binding version 2 requires toolRelay true and creates the fixed worker_apps descriptor. Controller service configuration accepts optional toolRelay: true to select the mount factory through normal startup. Missing or false keeps the relay disabled. Only a configured relay advertises customMcp/composioMcp to the harness, so it attaches the existing account-scoped bridges. The source and packaged app fixtures with this option each pass two-worker startup, independent approval cards, separate Store reports and verified settlements using two disposable Linux services. The later connected-tool fixtures execute two real synthetic MCP reads through the complete source/packaged app, distinct Linux worker services and controller-local approvals. They verify two completed tool-journal entries and account-matched Store reports. The providers are synthetic, not live Claude/Codex. Neither fixture qualifies saved grants or paid provider authentication. Evidence: service-app-qualification/tool-startup-source-proof.json and tool-startup-packaged-proof.json, connected-tool-source-proof.json and connected-tool-packaged-proof.json under the evidence root. Fixture resources were removed; paid model calls were zero.
 
-Worker suite: 175 passes and three Linux-only skips on Windows. Typecheck, worker packaging and packaged controller build pass. No deployed native worker uses this relay yet, and no result establishes hosted 34-worker capacity.
+Worker suite: 176 passes and three Linux-only skips on Windows. Typecheck, worker packaging and packaged controller build pass. No deployed native worker uses this relay yet, and no result establishes hosted 34-worker capacity.
+
+## Concurrency scope
+
+The local engine-memory wrapper applies only to its declared local engine/chat kinds; isolatedWorker is outside those sets. A controller's local engine-memory slot count therefore does not impose a six-worker ceiling on this provider. The per-bot thread ceiling limits conversations on one bot, not the number of independent bot identities. Worker lease capacity is per worker, and service maxRunning is the explicit host-wide admission policy.
+
+The coordinator regression reaches 34 simultaneous synthetic host executions with 34 distinct bot/worker/project assignments and 68 exclusive desktop/workspace leases. A 35th turn on an occupied bot desktop stays queued until that owner stops. All 35 reports remain on their own threads, all jobs settle and the resource table becomes empty. This checks controller scheduling and fencing only. It does not start 34 OS environments, call models or prove Railway capacity. The separately qualified full app fixtures use two actual disposable Linux services.
 
 ## Controller startup
 

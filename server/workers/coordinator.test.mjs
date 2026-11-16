@@ -176,3 +176,45 @@ test('two controller-mounted accounts wait for independent approvals and run con
     assert.equal(c.ledger.db.prepare('SELECT count(*) AS n FROM worker_tool_calls').get().n,2);
   }finally{c.close();}
 });
+
+
+test('34 independent bot assignments overlap while a busy desktop keeps its next thread queued',{timeout:10000},async()=>{
+  const {createHostAdmission}=await import('./host-admission.mjs');
+  const assignments=Array.from({length:34},(_,index)=>({bot:'bot-'+index,project:'project-'+index,pool:'pool',worker:'worker-'+index,
+    desktop:'desktop-'+index,workspace:'workspace-'+index}));
+  const signal=AbortSignal.timeout(7000),events=[],stopped=new Set();
+  let active=0,peak=0,release,allStarted;
+  const gate=new Promise(resolve=>{release=resolve;}),ready=new Promise(resolve=>{allStarted=resolve;});
+  const admission=createHostAdmission({limit:34,signal,isCurrent:job=>c.ledger.get(job.id).state==='running'});
+  const c=createWorkerCoordinator({file:':memory:',assignments,pools,signal,
+    resolveTurn:(bot,thread)=>({bot,thread,requestId:'request-'+thread,active:true}),
+    host:{admit:admission.acquire,health:async()=>true,launch:async({job})=>({worker:job.worker}),
+      execute:async({job,turnId,emit})=>{
+        assert.equal(job.bot.replace('bot-',''),job.worker.replace('worker-',''));
+        assert.equal(job.resources.length,2);
+        peak=Math.max(peak,++active);if(active===34)allStarted();
+        if(job.thread!=='followup')await gate;
+        active--;
+        emit({type:'item.completed',eventId:'report-'+job.id,itemType:'assistant_text',threadId:job.thread,turnId,text:job.bot});
+        return{ok:true};
+      },stop:async identity=>{stopped.add(identity.id);},inspectStopped:async identity=>{
+        if(!stopped.has(identity.id))return false;admission.release(identity);return true;
+      }}});
+  try{
+    const adapter=await c.bootstrap.createAdapter({instanceId:'workers',pool:'pool'});adapter.onEvent(event=>events.push(event));
+    await Promise.all(assignments.map(row=>adapter.sendTurn({botId:row.bot,threadId:'thread-'+row.worker,text:'Synthetic independent job',
+      approvalMode:'ask',mcpFromUserConfig:false,toolScope:{}})));
+    await ready;assert.equal(peak,34);
+    assert.equal(c.ledger.db.prepare("SELECT count(*) AS n FROM jobs WHERE state='running'").get().n,34);
+    assert.equal(c.ledger.db.prepare('SELECT count(*) AS n FROM resources').get().n,68);
+    await adapter.sendTurn({botId:'bot-0',threadId:'followup',text:'Synthetic queued job',approvalMode:'ask',mcpFromUserConfig:false,toolScope:{}});
+    assert.equal(c.ledger.db.prepare("SELECT count(*) AS n FROM jobs WHERE state='queued'").get().n,1);
+    assert.equal(active,34);release();
+    const results=await c.drain();assert.equal(results.length,35);assert.ok(results.every(row=>row.status==='fulfilled' && row.value.settled));
+    assert.equal(c.ledger.db.prepare('SELECT count(*) AS n FROM resources').get().n,0);
+    assert.equal(c.ledger.db.prepare("SELECT count(*) AS n FROM jobs WHERE state='completed'").get().n,35);
+    const reports=events.filter(event=>event.type==='item.completed');assert.equal(reports.length,35);
+    for(const row of assignments)assert.equal(reports.filter(event=>event.threadId==='thread-'+row.worker && event.text===row.bot).length,1);
+    assert.equal(reports.filter(event=>event.threadId==='followup' && event.text==='bot-0').length,1);
+  }finally{release();if(active===0)c.close();else c.ledger.close();}
+});
