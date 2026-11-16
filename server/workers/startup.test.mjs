@@ -37,3 +37,25 @@ test('worker startup refuses unresolved prior leases before listening or running
     rmSync(home,{recursive:true,force:true});
   }
 });
+
+test('service mode rejects unresolved leases without invoking Docker',async()=>{
+  const home=mkdtempSync(join(tmpdir(),'omb-service-startup-'));let calls=0;
+  try{
+    const data=join(home,'data');mkdirSync(join(data,'workers'),{recursive:true});
+    const ledger=new JobLedger(join(data,'workers','jobs.db'));
+    ledger.enqueue({id:'held',bot:'bot',thread:'thread',project:'project',resource:'desktop',resources:['workspace']});ledger.claim('held','worker',30000);ledger.close();
+    const file=(name,value)=>{const path=join(home,name);writeFileSync(path,value);return path;};
+    const keyFile=file('key','fixture'),certFile=file('cert','fixture'),caFile=file('ca','fixture');
+    const controllerTokenFile=file('controller.token','c'.repeat(40)),workerTokenFile=file('worker.token','w'.repeat(40));
+    const config={version:2,kind:'services',maxRunning:2,
+      assignments:[{bot:'bot',worker:'worker',project:'project',pool:'pool',desktop:'desktop',workspace:'workspace'}],
+      pools:{pool:{models:{default:'synthetic',options:[{id:'synthetic',label:'Synthetic'}]}}},
+      services:{worker:{origin:'https://127.0.0.1:12346',tokenFile:controllerTokenFile,keyFile,certFile,caFile,serverPin:'c'.repeat(64)}},
+      transport:{listenHost:'127.0.0.1',advertisedHost:'127.0.0.1',port:12345,controllerTokenFile,workerTokenFiles:{worker:workerTokenFile},
+        tls:{keyFile,certFile,caFile,controllerPin:'a'.repeat(64),workerPins:{worker:'b'.repeat(64)}}}};
+    await assert.rejects(loadConfiguredWorkerStartup({configFile:file('host.json',JSON.stringify(config)),dataDir:data,resolveTurn:()=>{},
+      run:async()=>{calls++;throw Error('Docker forbidden');},route:()=>{calls++;throw Error('Docker forbidden');}}),/reconciliation/);
+    assert.equal(calls,0);
+    const reopened=new JobLedger(join(data,'workers','jobs.db'));assert.equal(reopened.get('held').state,'running');reopened.close();
+  }finally{assert.equal(dirname(resolve(home)),resolve(tmpdir()));assert.ok(basename(home).startsWith('omb-service-startup-'));rmSync(home,{recursive:true,force:true});}
+});

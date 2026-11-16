@@ -1,3 +1,4 @@
+import {loadConfiguredServiceStartup} from './service-startup.mjs';
 import {readFileSync,mkdirSync} from 'node:fs';
 import {isAbsolute,join} from 'node:path';
 import {createContainerWorkerCoordinator} from './container-host.mjs';
@@ -17,6 +18,7 @@ const read=(file,limit=65536)=>{
 export async function loadConfiguredWorkerStartup({configFile,dataDir,resolveTurn,run,route}) {
   if(!configFile)return null;
   const config=JSON.parse(read(configFile,262144));
+  if(config?.version===2)return loadConfiguredServiceStartup({config,dataDir,resolveTurn});
   if(!exact(config,['version','namespace','dockerSshAlias','maxRunning','assignments','pools','policies','storageImage','transport']) ||
      config.version!==1 || !Number.isSafeInteger(config.maxRunning) || config.maxRunning<1 || config.maxRunning>64 ||
      !Array.isArray(config.assignments) || !config.assignments.length || config.assignments.length>64 ||
