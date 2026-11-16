@@ -88,4 +88,3 @@ export function workerClient({ origin, token, heartbeatMs = 1000, pollMs = 50, t
     },
   };
 }
-

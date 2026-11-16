@@ -173,4 +173,3 @@ export async function listenTransport({ ledger, controllerToken, workers, leaseM
     close: () => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())),
   };
 }
-
