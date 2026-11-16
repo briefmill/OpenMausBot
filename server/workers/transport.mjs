@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { validWorkerHost } from './transport-address.mjs';
+import { normalizeWorkerAssignment, workerAssignmentMatches } from './worker-assignment.mjs';
 
 const digest = value => createHash('sha256').update(value).digest();
 const denied = (status, message) => Object.assign(Error(message), { status });
@@ -43,12 +44,8 @@ export async function listenTransport({ ledger, controllerToken, workers, leaseM
   if (new Set(workers.map(w => w.id)).size !== workers.length || workers.some(w =>
     typeof w.id !== 'string' || !Array.isArray(w.assignments) || !w.assignments.length ||
     !Number.isSafeInteger(w.capacity) || w.capacity < 1 || w.capacity > 64)) throw Error('Invalid worker registration');
-  for (const worker of workers) for (const assignment of worker.assignments) {
-    exact(assignment, assignment.resources === undefined ? ['bot', 'thread', 'project', 'resource'] : ['bot', 'thread', 'project', 'resource', 'resources']);
-    if (assignment.resources !== undefined && (!Array.isArray(assignment.resources) || assignment.resources.some(r => typeof r !== 'string')))
-      throw Error('Invalid resource assignment');
-  }
-  const principals = entries.map(({ token, ...entry }) => ({ ...entry, tokenHash: digest(token),
+  workers=workers.map(worker=>({...worker,assignments:worker.assignments.map(normalizeWorkerAssignment)}));
+  const principals = [{token:controllerToken,role:'controller'},...workers.map(worker=>({...worker,role:'worker'}))].map(({ token, ...entry }) => ({ ...entry, tokenHash: digest(token),
     certificatePin: tls ? entry.role === 'controller' ? tls.controllerPin : tls.workerPins[entry.id] : null }));
   ledger.registerWorkers(workers.map(w => ({ id: w.id, capacity: w.capacity,
     assignments: w.assignments, credentialHash: digest(w.token + (tls ? ':' + tls.workerPins[w.id] : '')).toString('hex') })));
@@ -79,9 +76,9 @@ export async function listenTransport({ ledger, controllerToken, workers, leaseM
       }
       const job = ledger.get(id);
       if (principal.role === 'worker') {
-        const assigned = principal.assignments.some(a => ['bot', 'thread', 'project', 'resource'].every(k => a[k] === job[k]) &&
-          JSON.stringify([...new Set([a.resource, ...(a.resources ?? [])])].sort()) === JSON.stringify(job.resources));
-        if (!assigned || (job.worker && job.worker !== principal.id)) throw denied(403, 'Forbidden');
+        const assigned = principal.assignments.find(a => workerAssignmentMatches(a,job));
+        if (!assigned || (job.worker && job.worker !== principal.id) ||
+            (assigned.scope==='bot' && (job.worker!==principal.id || action==='claim'))) throw denied(403, 'Forbidden');
       }
       if (req.method === 'GET' && !action) return send(200, { job });
       if (req.method === 'GET' && action === 'events') {

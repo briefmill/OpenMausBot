@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomBytes } from 'node:crypto';
+import { normalizeWorkerAssignment } from './worker-assignment.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const canonical = value => JSON.stringify(value, Object.keys(value).sort());
@@ -70,13 +71,7 @@ export class JobLedger {
       if (!Number.isSafeInteger(worker.capacity) || worker.capacity < 1 || worker.capacity > 64 ||
           typeof worker.credentialHash !== 'string' || !/^[a-f0-9]{64}$/.test(worker.credentialHash) ||
           !Array.isArray(worker.assignments) || !worker.assignments.length) throw Error('Invalid worker registration');
-      const assignments = worker.assignments.map(a => {
-        const keys = ['bot', 'thread', 'project', 'resource'];
-        if (!a || Object.keys(a).some(k => ![...keys, 'resources'].includes(k)) ||
-            (a.resources !== undefined && (!Array.isArray(a.resources) || a.resources.length > 15))) throw Error('Invalid assignment');
-        return { ...Object.fromEntries(keys.map(k => [k, identity(a[k])])),
-          resources: [...new Set([a.resource, ...(a.resources ?? [])].map(identity))].sort() };
-      }).map(a => JSON.stringify(a)).sort();
+      const assignments = worker.assignments.map(normalizeWorkerAssignment).map(a => JSON.stringify(a)).sort();
       return { id, capacity: worker.capacity, assignments: JSON.stringify([...new Set(assignments)]), credentialHash: worker.credentialHash };
     });
     if (new Set(rows.map(r => r.id)).size !== rows.length) throw Error('Repeated worker registration');
