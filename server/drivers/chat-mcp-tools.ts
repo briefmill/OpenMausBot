@@ -55,6 +55,7 @@ export interface ChatToolSession {
   validate(name: string, args: unknown): void;
   /** Directory reads and OpenMausBot's own agents server need no card; call_tool shows the tool it runs. */
   view(name: string, args: Record<string, unknown>): ChatToolCallView;
+  identity?(name: string, args: Record<string, unknown>): { server: string; tool: string } | undefined;
   execute(name: string, args: Record<string, unknown>, signal: AbortSignal): Promise<ChatToolResult>;
   close(): Promise<void>;
 }
@@ -747,6 +748,13 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
     const tool = registered.get(name);
     return tool ? viewOf(tool, args, name) : { title: name, input: args, ask: true };
   };
+  const identity = (name: string, args: Record<string, unknown>): { server: string; tool: string } | undefined => {
+    const searched = directoryNames.get(name) === CALL_TOOL ? searchedCall(args) : undefined;
+    const tool = searched?.tool ?? registered.get(name);
+    if (!tool || tool.agents) return undefined;
+    const runs = target(tool, searched?.args ?? args);
+    return runs === undefined ? undefined : { server: tool.server, tool: runs };
+  };
   const run = async (tool: RegisteredTool, args: Record<string, unknown>, callSignal: AbortSignal): Promise<ChatToolResult> => {
     try {
       const result = await tool.client.call("tools/call", { name: tool.name, arguments: args }, AbortSignal.any([signal, callSignal]), callTimeoutMs, true);
@@ -785,7 +793,7 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
   };
   const answer = (result: DirectoryResult): ChatToolResult => ({ text: boundedText(result.content.map((part) => part.text).join("\n")), ok: result.isError !== true });
   return {
-    definitions, skipped, trimmed, merged, budget, validate, view, close,
+    definitions, skipped, trimmed, merged, budget, validate, view, identity, close,
     async refit(limit) {
       if (closed || signal.aborted) throw new ChatToolSessionError("MCP session closed");
       await layout(limit);

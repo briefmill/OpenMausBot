@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';import {join,resolve,dirname} from 'node:path';
+import {providerMcpTool,providerToolAllowKey} from '../provider-tool-allow.ts';
 import {JobLedger} from './ledger.mjs';
 import {createDurableToolExecutor} from './tool-executor.mjs';
 import {openAccountScopedWorkerTools} from './mounted-controller-tools.mjs';
@@ -35,6 +36,13 @@ test('mounted worker tools preserve separate synthetic account environments and 
       assert.equal(result.text.includes('fixture-credential-value'),false);assert.ok(result.text.includes('[redacted]'));
       assert.equal(result.text.includes(account==='account-a'?'account-b':'account-a'),false);
       assert.equal(events.filter(e=>e.type==='request.opened').length,1);
+      const canonical=events.find(e=>e.type==='request.opened').tool;
+      assert.equal(canonical,'mcp__composio__read_account');
+      assert.deepEqual(providerMcpTool(canonical),{server:'composio',tool:'read_account'});
+      const key=providerToolAllowKey('worker-provider',canonical,input.integrations.composio);
+      assert.ok(key);
+      assert.notEqual(key,providerToolAllowKey('worker-provider',canonical,{...input.integrations.composio,env:{SYNTHETIC_ACCOUNT:'changed'}}));
+      assert.equal(providerToolAllowKey('worker-provider','mcp__composio__send_email',input.integrations.composio),null);
       await assert.rejects(openAccountScopedWorkerTools({input:{...input,botId:'foreign'},job:identity,signal,isCurrent:()=>true}),/Controller-owned/);
       const restricted=await openAccountScopedWorkerTools({input:{...input,toolScope:{deny:['mcp:composio:read_account']}},job:identity,
         turnId:'restricted',signal,isCurrent:()=>true,emit:()=>{throw Error('Denied tool must not open approval');}});

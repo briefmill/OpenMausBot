@@ -28,6 +28,10 @@ export async function openAccountScopedWorkerTools(args) {
     const preview=value=>toolDetailPreview(JSON.parse(JSON.stringify(value,(_key,part)=>typeof part==='string'?scrub(part):part)));
     return createControllerToolSession({...args,session:{...tools,
       definitions:JSON.parse(JSON.stringify(tools.definitions,(_key,part)=>typeof part==='string'?scrub(part):part)),
+      view:(name,args)=>{
+        const shown=tools.view(name,args),identity=tools.identity?.(name,args);
+        return identity?{...shown,title:`mcp__${identity.server}__${identity.tool}`}:shown;
+      },
       execute:async(...callArgs)=>{
         const result=await tools.execute(...callArgs);
         return {...result,text:scrub(result.text)};
