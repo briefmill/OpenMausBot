@@ -47,6 +47,7 @@ const EXCLUDED = new Set([
   // A Team Cloud's engine homes (engine-homes/layout.ts): CLI login homes, each audience's own transcripts and the held
   // folder, which no admin reads.
   "engine-homes",
+  "workers",
   WAITS_FILE,
   // The data folder's format marker (data-format.ts) describes the folder it is in. Carried into a server older than the
   // one that wrote it, it would stop that server on every start; the destination keeps its own.
@@ -54,6 +55,7 @@ const EXCLUDED = new Set([
 ]);
 const EXCLUSION_NOTES = [
   "Device pairing, server identity, live leases and runtime files (existing destination identities are preserved).",
+  "Worker-host leases and credential-bound registrations stay on the destination. Docker worker volumes require their own backup.",
   "Saved credentials, provider and MCP connections, managed provider login homes and browser login profiles are not transferred. Destination connections are preserved; reconnect on a new device.",
   "Downloaded tools and caches (they can be installed again), and recorded browser step screenshots (export them from a conversation to keep them).",
   "Installed dependency folders (node_modules) and symbolic links inside conversation work folders; reinstall or recreate them in the project.",

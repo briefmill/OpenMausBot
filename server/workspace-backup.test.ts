@@ -116,6 +116,25 @@ function caseSensitiveTempFolder(): boolean {
 afterEach(() => { for (const root of scratch.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe("encrypted full workspace backups", () => {
+  it("omits worker host authority and preserves destination leases during restore", async () => {
+    const source = directory(), target = directory();
+    mkdirSync(join(source, "workers"));
+    writeFileSync(join(source, "workers", "jobs.db"), "source registration and leases");
+    writeFileSync(join(source, "workers", "jobs.db-wal"), "source WAL");
+    writeFileSync(join(source, "notes.md"), "portable work");
+    mkdirSync(join(target, "workers"));
+    const destinationLease = Buffer.from("destination lease authority");
+    writeFileSync(join(target, "workers", "jobs.db"), destinationLease);
+    const exported = await createWorkspaceBackup(source, { password: PASSWORD });
+    const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
+    const manifest = readJson(join(target, ".backups", staged.id, "staged", "manifest.json"));
+    expect(manifest.entries.some((entry: { path: string }) => entry.path === "workers" || entry.path.startsWith("workers/"))).toBe(false);
+    expect(omittedFromWorkspaceBackup("workers/jobs.db")).toBe(true);
+    commitPendingWorkspaceRestore(target, staged.id);
+    expect(applyPendingWorkspaceRestore(target)).toMatchObject({ restored: true });
+    expect(readFileSync(join(target, "workers", "jobs.db"))).toEqual(destinationLease);
+    expect(readFileSync(join(target, "notes.md"), "utf8")).toBe("portable work");
+  });
   it("leaves waits out of backups and Cloud sends", () => expect(omittedFromWorkspaceBackup("waits.json")).toBe(true));
 
   it("carries no waits, and a restore ends the waits already here, keeping them in the safety copy", async () => {
