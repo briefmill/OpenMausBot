@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import { Loader2, Moon, MonitorOff, TriangleAlert } from "lucide-react";
 import type { Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
@@ -26,10 +26,12 @@ const STATE_DOT: Record<MapComputerState, string> = {
 };
 
 /** A bot's computer on the Team map: a small monitor with its live screen, state and the bots that use it. */
-export const ComputerNode = memo(function ComputerNode({ computer, bots, frameUrl, state, activity, x, y, onOpen }: {
+export const ComputerNode = memo(function ComputerNode({ computer, bots, frameUrl, state, activity, surface, label, x, y, onOpen }: {
   computer: MapComputer;
   bots: Bot[];
   frameUrl?: string;
+  surface?: ReactNode;
+  label?: string;
   state: MapComputerState;
   activity?: string;
   x: number;
@@ -37,19 +39,19 @@ export const ComputerNode = memo(function ComputerNode({ computer, bots, frameUr
   onOpen?: () => void;
 }) {
   const live = state === "working";
-  const name = computer.kind === "team" ? computer.name : t("mapComputer.botComputer", { name: computer.name });
+  const name = label ?? (computer.kind === "team" ? computer.name : t("mapComputer.botComputer", { name: computer.name }));
   return <div data-computer-node={computer.id} className="absolute" style={{ left: x, top: y, width: MONITOR_WIDTH, height: MONITOR_HEIGHT }}>
     {live && <span aria-hidden className="pointer-events-none absolute -inset-[5px] animate-computer-glow rounded-[22px] border-2 border-success/70 shadow-[0_0_24px_rgba(52,199,89,0.35)]" />}
     <button type="button" onClick={onOpen} disabled={!onOpen} title={activity ? `${name} · ${activity}` : name}
       aria-label={t("mapComputer.open", { name, state: t(STATE_LABEL[state]) })}
       className="relative flex size-full flex-col rounded-[18px] border border-white/10 bg-[#0f1117] p-2 text-left shadow-[0_10px_30px_rgba(0,0,0,0.35)] outline-none transition-transform hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default">
       <span className="relative block h-[160px] w-full overflow-hidden rounded-[8px] bg-[#06070b] [contain:paint]">
-        {frameUrl
+        {surface ?? (frameUrl
           ? <img src={frameUrl} alt="" draggable={false} decoding="async" className={cn("size-full object-cover", state === "asleep" || state === "off" ? "opacity-40 grayscale" : "")} />
           : <span className="flex size-full flex-col items-center justify-center gap-2 bg-[radial-gradient(circle_at_50%_40%,#1b2030,#06070b_70%)] text-[11px] text-white/45">
             {state === "starting" ? <Loader2 size={20} className="animate-spin" /> : state === "asleep" ? <Moon size={20} /> : state === "problem" ? <TriangleAlert size={20} /> : <MonitorOff size={20} />}
             {t(state === "starting" ? "mapComputer.empty.starting" : state === "asleep" ? "mapComputer.empty.asleep" : state === "problem" ? "mapComputer.empty.problem" : state === "off" ? "mapComputer.empty.off" : "mapComputer.empty.waiting")}
-          </span>}
+          </span>)}
         <span className="absolute left-2 top-2 flex items-center gap-1.5 rounded-full bg-black/65 px-2 py-0.5 text-[10px] font-medium text-white/90 backdrop-blur-[2px]">
           <span className={cn("size-1.5 rounded-full", STATE_DOT[state], live && "animate-pulse")} />{t(STATE_LABEL[state])}
         </span>

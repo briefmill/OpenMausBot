@@ -241,6 +241,8 @@ export interface PreviewStreamTarget {
   readonly height?: number;
   /** Passive viewers reduce their own access, including automatic control grants. */
   readonly interactive?: boolean;
+  /** Watch an already running browser without starting one for the preview. */
+  readonly existingOnly?: boolean;
 }
 
 export interface PreviewStreamEvents {
@@ -302,6 +304,7 @@ export function createPreviewStreamClient(
       query.set("height", String(Math.round(size.height)));
     }
     if (target.interactive === false) query.set("interactive", "false");
+    if (target.existingOnly) query.set("existingOnly", "true");
     return withAccessQuery(`${target.access.wsBase}/stream?${query.toString()}`, target.access);
   };
   let stopped = false;

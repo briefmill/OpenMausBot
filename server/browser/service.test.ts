@@ -596,3 +596,22 @@ describe("browsers on one computer", () => {
     expect(existsSync(replacement.downloadDir)).toBe(true);
   });
 });
+
+
+describe("existing browser map viewers", () => {
+  it("never starts an absent or stopped browser to show a map preview", async () => {
+    const { service, target, backend, call } = setup();
+    const options = { owner: "map", canOperate: false, maxWidth: 512, maxHeight: 320 };
+    await expect(service.attachViewer(target, options, () => {}, true)).rejects.toThrow("No running browser");
+    expect(backend.chromes).toHaveLength(0);
+    await call("agent_browser_open", { url: "https://fixture.test/form" });
+    const before = backend.chromes.length;
+    const viewer = await service.attachViewer(target, options, () => {}, true);
+    expect(backend.chromes).toHaveLength(before);
+    expect(viewer.options.canOperate).toBe(false);
+    await viewer.close();
+    await service.closeAll();
+    await expect(service.attachViewer(target, options, () => {}, true)).rejects.toThrow("No running browser");
+    expect(backend.chromes).toHaveLength(before);
+  });
+});

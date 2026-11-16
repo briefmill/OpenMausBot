@@ -107,3 +107,26 @@ describe("map computers in the renderer", () => {
     expect(localFrameTime(11_000, 10_000, 50_000)).toBe(50_000);
   });
 });
+
+
+describe("browser monitors beside VM monitors", () => {
+  it("lays out both surfaces without overlaps and leaves room for the shared VM", () => {
+    const geometry = teamGeometry({ chiefs: bots("c", 1), members: bots("m", 2) }, {
+      own: new Map([["c0", "vm-c0"]]), browsers: new Map([["c0", "browser:c0"], ["m0", "browser:m0"]]),
+      team: { id: "shared", botIds: ["m1"] },
+    })!;
+    expect(geometry.monitors.map((monitor) => monitor.id)).toEqual(["vm-c0", "browser:c0", "browser:m0", "shared"]);
+    const boxes = [...geometry.cards.map((card) => ({ ...card, width: CARD_WIDTH, height: CARD_HEIGHT })),
+      ...geometry.monitors.map((monitor) => ({ ...monitor, width: MONITOR_WIDTH, height: MONITOR_HEIGHT }))];
+    boxes.forEach((box, index) => boxes.slice(index + 1).forEach((other) => expect(overlaps(box, other)).toBe(false)));
+    for (const box of boxes) expect(box.x + box.width).toBeLessThanOrEqual(geometry.width - TEAM_PADDING);
+    expect(geometry.links.filter((link) => link.botId === "c0")).toHaveLength(2);
+  });
+  it("uses the VM monitor dimensions and first lane for a browser-only bot", () => {
+    const geometry = teamGeometry({ chiefs: [], members: bots("m", 1) }, {
+      own: new Map(), browsers: new Map([["m0", "browser:m0"]]),
+    })!;
+    expect(geometry.monitors[0].x).toBe(TEAM_PADDING + CARD_WIDTH + LINK_WIDTH);
+    expect(geometry.height).toBe(HEADER_HEIGHT + MONITOR_HEIGHT + TEAM_PADDING);
+  });
+});

@@ -13,6 +13,7 @@ import { activityPreview, botEngine } from "@/lib/failed-turn";
 import { computerStepLine } from "@/lib/computer-step";
 import type { MapComputer, MapComputerState } from "../../shared/map-computer";
 import { BotAvatar } from "./Avatar";
+import { BrowserMapNode } from "./BrowserMapNode";
 import { ComputerNode } from "./ComputerNode";
 import { InstanceProviderMark, ProviderMark } from "./ProviderIcons";
 import { openBotSettings } from "./bot-panel/panel-link";
@@ -96,7 +97,7 @@ function currentActivity(bot: Bot | undefined, instances: ReturnType<typeof useS
   return bot.tasks?.find((task) => task.busy && task.threadId !== bot.threadId && task.title.trim())?.title;
 }
 
-export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemory, onEditTeam, onDeleteTeam, onComputer, onComputerDrop, onTeamComputer, teamComputers = {}, connectedBotIds = [], computers = NO_COMPUTERS, computerFrames = {}, onOpenComputer, taggedBotIds = [], sent, bottomInset = 0 }: {
+export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemory, onEditTeam, onDeleteTeam, onComputer, onComputerDrop, onTeamComputer, teamComputers = {}, connectedBotIds = [], computers = NO_COMPUTERS, showBrowsers = false, onOpenBrowser, computerFrames = {}, onOpenComputer, taggedBotIds = [], sent, bottomInset = 0 }: {
   sections: TeamMapSection<Bot>[];
   canManage: boolean;
   onMove: (bot: Bot, destination: string) => Promise<boolean | void>;
@@ -112,6 +113,8 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
   connectedBotIds?: string[];
   /** Computers drawn beside their bots; empty hides them and keeps the usual layout. */
   computers?: MapComputer[];
+  showBrowsers?: boolean;
+  onOpenBrowser?: (bot: Bot) => void;
   computerFrames?: Record<string, ShownFrame>;
   onOpenComputer?: (computer: MapComputer) => void;
   /** Bots a message being typed on the map will go to. */
@@ -140,11 +143,13 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
   const [menuAbove, setMenuAbove] = useState<string | null>(null);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const geometries = useMemo<Array<TeamGeometry | null>>(() => sections.map((section) => {
-    if (!computers.length) return null;
+    if (!computers.length && !showBrowsers) return null;
     const order = Object.hasOwn(botOrders, section.key) ? botOrders[section.key] : [];
     const chiefs = orderBots(section.chiefs, order), members = orderBots(section.members, order);
-    return teamGeometry({ chiefs, members }, teamComputersFor(section.key, [...chiefs, ...members].map((bot) => bot.id), computers));
-  }), [sections, computers, botOrders]);
+    const devices = teamComputersFor(section.key, [...chiefs, ...members].map((bot) => bot.id), computers);
+    return teamGeometry({ chiefs, members }, { ...devices, browsers: showBrowsers
+      ? new Map([...chiefs, ...members].filter((bot) => bot.browser !== false).map((bot) => [bot.id, `browser:${bot.id}`])) : undefined });
+  }), [sections, computers, botOrders, showBrowsers]);
   const columnsFor = useMemo(() => {
     if (!geometries.some(Boolean)) return undefined;
     const sizes = geometries.map((geometry, index) => geometry ?? teamSize(sections[index]));
@@ -478,6 +483,11 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
               return bot ? <div key={bot.id} className="absolute" style={{ left: card.x, top: card.y }}>{renderBot(bot)}</div> : null;
             })}
             {geometry.monitors.map((monitor) => {
+              if (monitor.id.startsWith("browser:")) {
+                const bot = botById.get(monitor.id.slice(8));
+                return bot ? <BrowserMapNode key={monitor.id} bot={bot} x={monitor.x} y={monitor.y}
+                  onOpen={onOpenBrowser ? () => onOpenBrowser(bot) : undefined} /> : null;
+              }
               const computer = computerById.get(monitor.id);
               if (!computer) return null;
               const users = computer.botIds.flatMap((id) => botById.get(id) ?? []);

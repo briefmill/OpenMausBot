@@ -638,8 +638,10 @@ export class BrowserService {
 
   // People.
 
-  async attachViewer(target: BrowserTarget, options: ViewerOptions, push: (output: ViewerOutput) => void): Promise<Viewer> {
-    const profile = this.profile(target);
+  async attachViewer(target: BrowserTarget, options: ViewerOptions, push: (output: ViewerOutput) => void, existingOnly = false): Promise<Viewer> {
+    const existing = this.#profiles.get(target.key);
+    if (existingOnly && (!existing?.run || existing.run.closing || !existing.run.browser.connected)) throw new Error("No running browser to preview.");
+    const profile = existing ?? this.profile(target);
     return profile.hub.attach(options, push);
   }
 

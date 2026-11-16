@@ -8,6 +8,7 @@ export const TREE_INDENT = 28;
 /** What one team draws: the computers its own bots use, and the team's shared computer with the bots on Auto. */
 export interface TeamComputers {
   own: ReadonlyMap<string, string>;
+  browsers?: ReadonlyMap<string, string>;
   team?: { id: string; botIds: readonly string[] };
 }
 
@@ -29,9 +30,10 @@ export interface TeamGeometry {
 export function teamGeometry(section: { chiefs: ReadonlyArray<{ id: string }>; members: ReadonlyArray<{ id: string }> }, computers: TeamComputers): TeamGeometry | null {
   const bots = [...section.chiefs, ...section.members];
   const own = bots.filter((bot) => computers.own.has(bot.id));
-  if (!own.length && !computers.team) return null;
+  const browsers = bots.filter((bot) => computers.browsers?.has(bot.id));
+  if (!own.length && !browsers.length && !computers.team) return null;
   const tree = section.chiefs.length > 0 && section.members.length > 0;
-  const rowHeight = own.length ? MONITOR_HEIGHT : CARD_HEIGHT;
+  const rowHeight = own.length || browsers.length ? MONITOR_HEIGHT : CARD_HEIGHT;
   const rowTop = (index: number) => HEADER_HEIGHT + index * (rowHeight + GAP);
   const rowCenter = (index: number) => rowTop(index) + rowHeight / 2;
   const cardsRight = TEAM_PADDING + (tree ? TREE_INDENT : 0) + CARD_WIDTH;
@@ -49,9 +51,21 @@ export function teamGeometry(section: { chiefs: ReadonlyArray<{ id: string }>; m
     monitors.push({ id, x: monitorX, y: rowTop(index) + (rowHeight - MONITOR_HEIGHT) / 2 });
     links.push({ botId: bot.id, computerId: id, points: [{ x: cards[index].x + CARD_WIDTH, y: rowCenter(index) }, { x: monitorX, y: rowCenter(index) }] });
   });
+  const browserX = monitorX + (own.length ? MONITOR_WIDTH + LINK_WIDTH : 0);
+  bots.forEach((bot, index) => {
+    const id = computers.browsers?.get(bot.id);
+    if (!id) return;
+    monitors.push({ id, x: browserX, y: rowTop(index) });
+    const start = { x: cards[index].x + CARD_WIDTH, y: rowCenter(index) };
+    const end = { x: browserX, y: rowCenter(index) };
+    const via = rowTop(index) + 4;
+    links.push({ botId: bot.id, computerId: id, points: computers.own.has(bot.id)
+      ? [start, { x: start.x + LINK_WIDTH / 2, y: start.y }, { x: start.x + LINK_WIDTH / 2, y: via }, { x: end.x - LINK_WIDTH / 2, y: via }, { x: end.x - LINK_WIDTH / 2, y: end.y }, end]
+      : [start, end] });
+  });
   const rowsBottom = rowTop(bots.length) - GAP;
   let bottom = Math.max(rowsBottom, HEADER_HEIGHT + CARD_HEIGHT);
-  let right = own.length ? monitorX + MONITOR_WIDTH : cardsRight;
+  let right = browsers.length ? browserX + MONITOR_WIDTH : own.length ? monitorX + MONITOR_WIDTH : cardsRight;
   if (computers.team) {
     const users = bots.map((bot, index) => ({ bot, index })).filter(({ bot }) => computers.team!.botIds.includes(bot.id));
     const centers = (users.length ? users : bots.map((bot, index) => ({ bot, index }))).map(({ index }) => rowCenter(index));
