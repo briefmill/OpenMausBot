@@ -34,3 +34,9 @@ Do not call Railway's management API for each bot turn. Persistent worker servic
 ## Local checks completed
 
 Worker-focused suite previously passed 115 tests. Current backup boundary run passed 83 tests with four skips across workspace-backup and workspace-backup-policy. This change preserves destination workers/jobs.db during workspace restore and omits the source ledger and WAL from exported archives.
+
+## Persistent service execution component
+
+service-execution.mjs adds a supervisor-owned SQLite journal and one execution slot per worker service. It records consumed job generations before execution, refuses overlapping work on that service, preserves uncertain ownership across restart, and requires a trusted shutdown inspection before reuse. Cancellation interrupts waiting even when the execution promise ignores its signal. Shutdown has a bounded deadline; timeout retains the slot for reconciliation. Eleven isolated tests cover these paths and failure isolation between separate service slots.
+
+This component is not wired into startup or an HTTP service. Its execute, stop and inspectStopped callbacks must come from a trusted process supervisor. A worker-supplied receipt is insufficient shutdown evidence. Run one supervisor per journal; multi-supervisor ownership and process-tree containment still need implementation and integration tests. No Railway worker deployment is implied by these unit tests.
