@@ -13,7 +13,14 @@ const key=identity=>{
 export function createServiceExecution({file,worker,execute,stop,inspectStopped,stopMs=10000}) {
   if(!Number.isSafeInteger(stopMs) || stopMs<1 || stopMs>30000 || typeof file!=='string' || !file || !valid(worker) ||
      ![execute,stop,inspectStopped].every(value=>typeof value==='function'))throw Error('Trusted service execution required');
-  const db=new DatabaseSync(file);
+  let lock,db;
+  try{
+    if(file!==':memory:'){
+      lock=new DatabaseSync(file+'.supervisor-lock');
+      lock.exec('PRAGMA busy_timeout=0; BEGIN EXCLUSIVE;');
+    }
+    db=new DatabaseSync(file);
+  }catch{try{lock?.close();}catch{}throw Error('Supervisor authority already active or unavailable');}
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
     CREATE TABLE IF NOT EXISTS executions (identity TEXT PRIMARY KEY, state TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS owner (slot INTEGER PRIMARY KEY CHECK(slot=1), identity TEXT NOT NULL);
@@ -87,6 +94,6 @@ export function createServiceExecution({file,worker,execute,stop,inspectStopped,
       if(await inspectStopped(structuredClone(identity))!==true)throw Error('Service stop unverified');
       release(encoded,'failed');
     },
-    close(){if(active)throw Error('Service execution active');db.close();},
+    close(){if(active)throw Error('Service execution active');try{db.close();}finally{lock?.close();}},
   };
 }

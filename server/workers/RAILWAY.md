@@ -10,7 +10,7 @@ service-controller.mjs connects fixed operator-selected service clients to the e
 
 The Linux supervisor runs as root in an operator-confirmed dedicated PID namespace. It uses setpriv to clear groups and capabilities, switch worker UID and enable no-new-privileges. It checks that UID across /proc, including detached children, before releasing execution. Signal helpers run as the worker UID. The image needs Tini, setpriv and kill; the supervisor needs SETUID, SETGID and SETPCAP. Railway availability of those capabilities is unverified.
 
-Cancellation before delivery creates a durable tombstone. Duplicate generations cannot execute again. An expired heartbeat, lost connection or unverified shutdown retains ownership for trusted reconciliation. Restart does not silently retry external actions. Controller workspace backups preserve destination worker authority and omit the host-bound ledger. Worker volumes need a separate backup/recovery test.
+Cancellation before delivery creates a durable tombstone. Duplicate generations cannot execute again. An expired heartbeat, lost connection or unverified shutdown retains ownership for trusted reconciliation. Restart does not silently retry external actions. Controller workspace backups preserve destination worker authority and omit the host-bound ledger. Worker files and consumed-generation records survive container replacement in the named-volume fixture. Full backup/restore still needs acceptance.
 
 ## Controller startup
 
@@ -49,7 +49,7 @@ Evidence root: C:\Users\lL0xt\OneDrive\Documents\ManusBot\worker-execution-candi
 | service-app-qualification\packaged-proof.json | Same service path through packaged controller copied outside the repository |
 | native-package-qualification\proof.json | Bundled real Claude driver, fake CLI, two separate threads, event receipt and verified shutdown, external network disabled |
 
-All inference in these fixtures is synthetic. They establish neither real model authentication nor 34-worker throughput. The focused worker suite has 137 passing tests; server typecheck and release build pass. Packaged smoke covers normal startup outside the source tree, proxy paths, CLI/MCP, backup worker, trust gate and desktop entry. Temporary containers, networks and certificates from the full-app fixtures were removed.
+All inference in these fixtures is synthetic. They establish neither real model authentication nor 34-worker throughput. The Windows worker suite has 139 passing tests and three Linux-only skips; those three ownership tests also pass in the Linux fixture; server typecheck and release build pass. Packaged smoke covers normal startup outside the source tree, proxy paths, CLI/MCP, backup worker, trust gate and desktop entry. Temporary containers, networks and certificates from the full-app fixtures were removed.
 
 ## Railway facts and open gates
 
@@ -68,3 +68,13 @@ OMB_WORKER_SERVICE_CONFIG selects a root-owned regular JSON file with mode 0600.
 The child environment is explicit; Railway management variables, Docker endpoints, SSH agent sockets and controller startup variables are rejected. Set OMB_NATIVE_WORKER_CONFIG there to the worker's read-only native binding. The entry closes health, drains/stops execution and closes its controller client on SIGTERM. Readiness becomes unavailable when the execution journal contains uncertain ownership. It does not prove provider login or model capacity.
 
 standalone-worker-qualification\proof.json verifies the packaged entry, rejection of an unprotected configuration, readiness, two real-Claude-driver/fake-CLI turns, controller lease checks, recorded events and graceful shutdown. External networking was disabled. image-proof.json records the local worker recipe build and missing-config rejection. These checks do not qualify Railway capabilities, the production base or Codex runtime.
+
+## Persistent volume and supervisor recovery
+
+service-storage.mjs binds an initialized volume to one bot, project, worker, desktop, workspace and UID. Initialization is an explicit trusted operator action on an empty volume. It writes a root-only binding marker, root-only authority directory and worker-owned workspace. Existing nonempty unbound data, foreign bindings and unsafe permissions are refused; initialization never re-owns existing data. An interrupted initialization remains blocked for review. The initializer needs CHOWN; the ordinary service does not initialize storage on startup.
+
+Standalone configuration version 2 replaces file and cwd with storageRoot. Startup verifies the binding and derives authority/jobs.db and workspace under that root. Version 1 remains the path-based fixture format; use version 2 for persistent workers. Keep the root directory owned by root with no group/other write and enough traversal permission for the worker. Secrets and service configuration remain outside the worker-owned workspace.
+
+Each file-backed service journal takes an exclusive SQLite lock in a separate supervisor-lock file before changing job state. A second supervisor cannot mark a live job uncertain or reuse its slot. The operating system releases the lock when a process dies; unfinished jobs become uncertain on reopen, keep their ownership and still require trusted stop reconciliation. Cancellation and completed-generation records persist.
+
+service-volume-qualification\proof.json verifies named-volume ownership, private authority permissions, foreign-project refusal and checkpoint/consumed-generation persistence. persistent-entry-qualification\proof.json verifies two standalone container instances sharing one bound volume: four fresh real-Claude-driver/fake-CLI turns complete, old-generation replay is refused and the worker checkpoint survives. Both fixtures remove their volumes. The source crash test kills an actual disposable supervisor process and verifies lock release with uncertain ownership retained. These results do not establish encrypted backup restore, Railway volume locking behavior or production model authentication.

@@ -1,3 +1,4 @@
+import {spawn} from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -110,4 +111,47 @@ test('cancel-before-delivery persists a tombstone and prevents delayed execution
     assert.equal(service.state(identity),'cancelled');await assert.rejects(service.run(request()),/consumed/);assert.equal(calls,0);
     await service.run(request({...identity,id:'different'}));assert.equal(calls,1);
   }finally{service.close();}
+});
+
+test('a second supervisor cannot mutate an active journal or consume its slot',async()=>{
+  const root=mkdtempSync(join(tmpdir(),'omb-service-lock-')),file=join(root,'service.db');let finish;
+  const first=setup({file,execute:()=>new Promise(resolve=>{finish=resolve;})});
+  try{
+    const running=first.run(request());await Promise.resolve();
+    assert.throws(()=>setup({file}),/authority already active/);assert.equal(first.state(identity),'running');
+    finish({ok:true});await running;first.close();
+    const next=setup({file});try{assert.equal(next.state(identity),'completed');await assert.rejects(next.run(request()),/consumed/);}finally{next.close();}
+  }finally{rmSync(root,{recursive:true,force:true});}
+});
+
+
+test('process death releases the supervisor lock but preserves unfinished ownership',async()=>{
+  const root=mkdtempSync(join(tmpdir(),'omb-service-crash-')),file=join(root,'service.db');
+  const code=`const {createServiceExecution}=await import(process.argv[1]);
+    const service=createServiceExecution({file:process.argv[2],worker:'worker-a',
+      execute:async()=>{process.stdout.write('started');await new Promise(()=>{});},stop:async()=>{},inspectStopped:async()=>false});
+    setInterval(()=>{},1000);void service.run({identity:{id:'job-a',worker:'worker-a',generation:1},task:{},signal:new AbortController().signal});`;
+  const child=spawn(process.execPath,['--input-type=module','-e',code,new URL('./service-execution.mjs',import.meta.url).href,file],
+    {windowsHide:true,stdio:['ignore','pipe','ignore']});
+  const exited=new Promise(resolve=>child.once('exit',resolve));
+  try{
+    await new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(Error('Fixture child did not start')),3000);
+      child.once('error',error=>{clearTimeout(timer);reject(error);});
+      child.stdout.once('data',chunk=>{clearTimeout(timer);String(chunk)==='started'?resolve():reject(Error('Unexpected fixture output'));});
+    });
+    assert.throws(()=>setup({file}),/authority already active/);
+    child.kill('SIGKILL');await exited;
+    let verified=false;const restarted=setup({file,inspectStopped:async()=>verified});
+    try{
+      assert.equal(restarted.state(identity),'uncertain');assert.equal(restarted.hasUncertain(),true);
+      await assert.rejects(restarted.run(request({...identity,id:'new-job'})),/occupied/);
+      await assert.rejects(restarted.reconcile(identity),/unverified/);
+      verified=true;await restarted.reconcile(identity);assert.equal(restarted.state(identity),'failed');
+      await assert.rejects(restarted.run(request()),/consumed/);await restarted.run(request({...identity,id:'new-job'}));
+    }finally{restarted.close();}
+  }finally{
+    if(child.exitCode===null && child.signalCode===null){child.kill('SIGKILL');await exited;}
+    rmSync(root,{recursive:true,force:true});
+  }
 });

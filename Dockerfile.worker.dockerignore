@@ -18,3 +18,4 @@
 !dist-worker/transport-address.mjs
 !dist-worker/package.json
 !dist-worker/manifest.json
+!dist-worker/service-storage.mjs

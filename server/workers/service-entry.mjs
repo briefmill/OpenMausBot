@@ -1,3 +1,5 @@
+import {verifyServiceStorage} from './service-storage.mjs';
+import {normalizeWorkerAssignment} from './worker-assignment.mjs';
 import {openSync,fstatSync,readFileSync,closeSync,constants} from 'node:fs';
 import {isAbsolute,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -24,19 +26,26 @@ const controllerConnection=value=>{
 export async function startWorkerService({configFile}) {
   if(process.platform!=='linux' || process.getuid?.()!==0)throw Error('Root Linux worker service required');
   const config=JSON.parse(read(configFile,{privateFile:true,limit:262144}));
-  if(!exact(config,['version','worker','assignment','file','bootstrapFile','cwd','environment','uid','deadlineMs','isolatedPidNamespace','controller','transport','health']) ||
-     config.version!==1 || !exact(config.transport,['listenHost','advertisedHost','port','controllerTokenFile','tls']) ||
+  const common=['version','worker','assignment','bootstrapFile','environment','uid','deadlineMs','isolatedPidNamespace','controller','transport','health'];
+  if(![1,2].includes(config.version) || !exact(config,[...common,...(config.version===2?['storageRoot']:['file','cwd'])]) || !exact(config.transport,['listenHost','advertisedHost','port','controllerTokenFile','tls']) ||
      !exact(config.transport.tls,['keyFile','certFile','caFile','controllerPin']) ||
      !exact(config.health,['listenHost','port']) || !Number.isSafeInteger(config.health.port) || config.health.port<1 ||
      config.health.port===config.transport.port || !Number.isSafeInteger(config.transport.port) || config.transport.port<1 ||
      !config.environment || typeof config.environment!=='object' || Array.isArray(config.environment) ||
      Object.keys(config.environment).some(name=>/^RAILWAY_|^(DOCKER_HOST|SSH_AUTH_SOCK|OMB_WORKER_SERVICE_CONFIG|OMB_WORKER_HOST_CONFIG)$/.test(name)))
     throw Error('Operator-owned worker service configuration required');
+  let storage={file:config.file,cwd:config.cwd};
+  if(config.version===2){
+    const assignment=normalizeWorkerAssignment(config.assignment),workspaces=assignment.resources.filter(value=>value!==assignment.resource);
+    if(assignment.scope!=='bot' || workspaces.length!==1)throw Error('Bot-owned persistent service assignment required');
+    storage=verifyServiceStorage({root:config.storageRoot,uid:config.uid,binding:{worker:config.worker,bot:assignment.bot,
+      project:assignment.project,desktop:assignment.resource,workspace:workspaces[0]}});
+  }
   const client=workerClient(controllerConnection(config.controller)),t=config.transport,tls=t.tls;
   let service,health,closing;
   const close=()=>closing??=(async()=>{try{await health?.close();}finally{try{await service?.close();}finally{client.close();}}})();
   try{
-    service=await createSupervisedExecutionService({...config,verifyLease:client.verifyLease,
+    service=await createSupervisedExecutionService({...config,...storage,verifyLease:client.verifyLease,
       transport:{listenHost:t.listenHost,advertisedHost:t.advertisedHost,port:t.port,
         controllerToken:read(t.controllerTokenFile,{privateFile:true}).trim(),
         tls:{key:read(tls.keyFile,{privateFile:true}),cert:read(tls.certFile),ca:read(tls.caFile),controllerPin:tls.controllerPin}}});
