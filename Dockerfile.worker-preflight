@@ -1,0 +1,5 @@
+FROM docker.io/library/node@sha256:0e2646ab57e77b7a384a0cb59b6815b182c77e1f9c3ba36bd8435bd9c4e6680e
+RUN apt-get update && apt-get install -y --no-install-recommends tini=0.19.0-1+b3 util-linux=2.38.1-5+deb12u3 procps=2:4.0.2-3 && rm -rf /var/lib/apt/lists/*
+COPY server/workers/runtime-preflight.mjs server/workers/runtime-probe-server.mjs server/workers/service-health.mjs /opt/preflight/
+EXPOSE 8080
+ENTRYPOINT ["/usr/bin/tini", "--", "node", "/opt/preflight/runtime-probe-server.mjs"]

@@ -19,3 +19,5 @@
 !dist-worker/package.json
 !dist-worker/manifest.json
 !dist-worker/service-storage.mjs
+!dist-worker/runtime-preflight.mjs
+!dist-worker/runtime-probe-server.mjs

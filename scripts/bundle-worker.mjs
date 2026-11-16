@@ -10,7 +10,7 @@ const yaml={name:'worker-yaml-esm',setup(build){build.onResolve({filter:/^yaml$/
 await build({entryPoints:[join(root,'server','workers','native-bootstrap.mjs')],outfile:join(output,'native-bootstrap.mjs'),
   bundle:true,platform:'node',target:'node24',format:'esm',plugins:[yaml,serverLocalePlugin],
   banner:{js:'import {createRequire as __ombWorkerRequire} from "node:module"; const require=__ombWorkerRequire(import.meta.url);'},logLevel:'info'});
-const files=['service-storage.mjs','service-entry.mjs','service-health.mjs','worker-process.mjs','process-client.mjs','service-host.mjs','service-execution.mjs','linux-service-supervisor.mjs',
+const files=['runtime-preflight.mjs','runtime-probe-server.mjs','service-storage.mjs','service-entry.mjs','service-health.mjs','worker-process.mjs','process-client.mjs','service-host.mjs','service-execution.mjs','linux-service-supervisor.mjs',
   'service-transport.mjs','worker-client.mjs','worker-assignment.mjs','provider-runner.mjs','event-wire.mjs','tls-request.mjs','transport-address.mjs'];
 for(const file of files)copyFileSync(join(root,'server','workers',file),join(output,file));
 const names=['native-bootstrap.mjs',...files];

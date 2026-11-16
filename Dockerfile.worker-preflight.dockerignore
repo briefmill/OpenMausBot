@@ -1,0 +1,7 @@
+**
+!Dockerfile.worker-preflight
+!server
+!server/workers
+!server/workers/runtime-preflight.mjs
+!server/workers/runtime-probe-server.mjs
+!server/workers/service-health.mjs
