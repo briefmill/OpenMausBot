@@ -6,7 +6,7 @@ import { buildTeamMapSections } from "../../src/lib/team-map";
 import { applySkin } from "../../src/lib/skins";
 import "../../src/styles.css";
 
-applySkin("midnight");
+applySkin(new URLSearchParams(location.search).get("skin") === "daylight" ? "daylight" : "midnight");
 const payload = await fetch("/api/bots").then((response) => response.json());
 const bots: Bot[] = payload.bots.filter((bot: Bot) => bot.name.startsWith("Demo ")).map((bot: Bot) => ({ ...bot, busy: true }));
 function Fixture() {

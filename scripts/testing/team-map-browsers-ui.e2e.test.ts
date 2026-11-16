@@ -68,12 +68,22 @@ const binary = process.env.OMB_MAP_TEST_AGENT_BROWSER;
     }
     const evidence = join(process.cwd(), "docs/verification/images/team-map-browsers"); mkdirSync(evidence, { recursive: true });
     await agentBrowser(binary!, env, ["screenshot", join(evidence, "live-browser-previews.png")]);
+    await agentBrowser(binary!, env, ["record", "start", join(evidence, "live-browser-previews.webm"), "--fps", "10"]);
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+    await agentBrowser(binary!, env, ["record", "stop"]);
     const connections = stream.size; expect(connections).toBe(2);
     await evaluate(`document.querySelector('[data-computer-node="browser:${ids[0]}"] button').click()`);
     await expect.poll(() => evaluate("document.querySelector('[data-opened]').dataset.opened")).toBe(ids[0]);
     await evaluate("document.querySelector('header button').click()");
     await expect.poll(() => stream.size, { timeout: 10_000 }).toBe(0);
     expect(await evaluate("document.querySelectorAll('[data-computer-node^=\"browser:\"]').length")).toBe(0);
+    await agentBrowser(binary!, env, ["screenshot", join(evidence, "midnight-before.png")]);
+    await agentBrowser(binary!, env, ["open", `${preview.previewUrl}?skin=daylight`]);
+    await expect.poll(() => evaluate("document.querySelectorAll('[data-computer-node^=\"browser:\"] canvas:not(.invisible)').length"), { timeout: 20_000 }).toBe(2);
+    await agentBrowser(binary!, env, ["screenshot", join(evidence, "daylight-after.png")]);
+    await evaluate("document.querySelector('header button').click()");
+    await expect.poll(() => stream.size, { timeout: 10_000 }).toBe(0);
+    await agentBrowser(binary!, env, ["screenshot", join(evidence, "daylight-before.png")]);
     writeFileSync(join(evidence, "receipt.json"), JSON.stringify({ synthetic: true, liveBrowserPreviews: connections, hiddenStreams: stream.size, selectedBot: ids[0], screenshot: "live-browser-previews.png" }, null, 2));
   } finally {
     await agentBrowser(binary!, env, ["close"]).catch(() => {});

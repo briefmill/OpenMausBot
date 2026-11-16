@@ -29,7 +29,7 @@ For the Team canvas UI fixture, also set OMB_MAP_TEST_AGENT_BROWSER to the pinne
 pnpm exec vitest run scripts/testing/team-map-browsers-ui.e2e.test.ts
 ```
 
-Evidence: [Team map screenshot](images/team-map-browsers/live-browser-previews.png), [UI receipt](images/team-map-browsers/receipt.json).
+Evidence: [Midnight with previews](images/team-map-browsers/live-browser-previews.png), [Midnight screens hidden](images/team-map-browsers/midnight-before.png), [Daylight with previews](images/team-map-browsers/daylight-after.png), [Daylight screens hidden](images/team-map-browsers/daylight-before.png), [Live preview video](images/team-map-browsers/live-browser-previews.webm), [UI receipt](images/team-map-browsers/receipt.json).
 
 ## Scope and limits
 
