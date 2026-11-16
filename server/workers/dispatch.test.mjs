@@ -62,3 +62,41 @@ test('cancellation during execution settles only after host stop', async () => {
     assert.equal(stopped, true);
   } finally { ledger.close(); }
 });
+test('queued desktop job starts after the previous host stop releases ownership', async () => {
+  const ledger=new JobLedger(':memory:');
+  try {
+    ledger.enqueue(job('a'));ledger.enqueue(job('b'));
+    let release,firstRunning;const gate=new Promise(resolve=>release=resolve),started=new Promise(resolve=>firstRunning=resolve);
+    const order=[];
+    const dispatcher=createDispatcher({ledger,waitForCapacity:true,signal:AbortSignal.timeout(2000),pollMs:1,
+      launch:async({job})=>{order.push('launch-'+job.id);return job.id;},execute:async({job})=>{if(job.id==='a'){firstRunning();await gate;}return job.id;},
+      stop:async({id})=>{order.push('stop-'+id);},inspectStopped:async()=>true});
+    const first=dispatcher.dispatch('a','worker');await started;
+    const second=dispatcher.dispatch('b','worker');
+    await new Promise(resolve=>setTimeout(resolve,10));assert.deepEqual(order,['launch-a']);
+    release();const results=await Promise.all([first,second]);assert.ok(results.every(x=>x.outcome==='completed'));
+    assert.deepEqual(order,['launch-a','stop-a','launch-b','stop-b']);
+  } finally {ledger.close();}
+});
+test('cancelling a queued turn does not launch it or disturb its desktop owner',async()=>{
+  const ledger=new JobLedger(':memory:');
+  try {
+    ledger.enqueue(job('a'));ledger.enqueue(job('b'));ledger.claim('a','worker',30000);
+    let launches=0;
+    const dispatcher=createDispatcher({ledger,waitForCapacity:true,signal:AbortSignal.timeout(2000),pollMs:1,
+      launch:async()=>{launches++;},execute:async()=>{},stop:async()=>{},inspectStopped:async()=>true});
+    const queued=dispatcher.dispatch('b','worker');ledger.cancel('b');
+    assert.equal((await queued).outcome,'cancelled');assert.equal(launches,0);assert.equal(ledger.get('a').state,'running');
+  } finally {ledger.close();}
+});
+test('pre-dispatch cancellation and expired queue signal cannot launch a worker',async()=>{
+  const ledger=new JobLedger(':memory:');
+  try {
+    ledger.enqueue(job('a'));ledger.enqueue(job('b'));ledger.cancel('a');let launches=0;
+    const control=new AbortController();control.abort();
+    const dispatcher=createDispatcher({ledger,waitForCapacity:true,signal:control.signal,
+      launch:async()=>{launches++;},execute:async()=>{},stop:async()=>{},inspectStopped:async()=>true});
+    assert.equal((await dispatcher.dispatch('a','worker')).outcome,'cancelled');
+    assert.equal((await dispatcher.dispatch('b','worker')).outcome,'cancelled');assert.equal(launches,0);
+  } finally {ledger.close();}
+});

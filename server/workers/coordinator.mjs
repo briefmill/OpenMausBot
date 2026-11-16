@@ -10,7 +10,12 @@ export function createWorkerCoordinator({ file, assignments, resolveTurn, pools,
   }
   const ledger = new JobLedger(file), contexts = new Map(), adapters = new Map();
   const planner = createJobPlanner({ ledger, assignments, resolveTurn });
-  const dispatcher = createDispatcher({ ledger,
+  const dispatcher = createDispatcher({ ledger, waitForCapacity:true, signal,
+    onQueued:job => {
+      const context=contexts.get(job.id);
+      context.emit({provider:'isolatedWorker',threadId:job.thread,turnId:context.turnId,eventId:'queued-'+job.id,
+        type:'runtime.notice',message:'Waiting for the assigned desktop to become available.'});
+    },
     launch: async ({ job, generation }) => {
       const context = contexts.get(job.id);
       if (signal.aborted) throw Error('Worker host stopped');

@@ -1,12 +1,30 @@
 // Trusted controller bootstrap supplies host operations. Job bodies cannot
 // select executables, credentials, mounts or management endpoints.
-export function createDispatcher({ ledger, launch, execute, stop, inspectStopped, capacity = 1, leaseMs = 300000, stopMs = 10000 }) {
+import { setTimeout as pause } from 'node:timers/promises';
+
+export function createDispatcher({ ledger, launch, execute, stop, inspectStopped, capacity = 1, leaseMs = 300000, stopMs = 10000,
+  waitForCapacity = false, signal, pollMs = 100, onQueued = () => {} }) {
   if (![launch, execute, stop, inspectStopped].every(fn => typeof fn === 'function')) throw Error('Trusted host callbacks required');
   if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > 64) throw Error('Invalid capacity');
   if (!Number.isSafeInteger(stopMs) || stopMs < 1 || stopMs > 30000) throw Error('Invalid stop deadline');
+  if (waitForCapacity && (!signal || !Number.isSafeInteger(pollMs) || pollMs < 1 || pollMs > 1000)) throw Error('Bounded queue signal required');
   return {
     async dispatch(id, worker) {
-      const lease = ledger.claim(id, worker, leaseMs, capacity);
+      const before = ledger.get(id);
+      if (before.state === 'cancelled') return { started:false, settled:true, outcome:'cancelled' };
+      if (waitForCapacity && signal.aborted && before.state === 'queued') {
+        ledger.cancel(id); return { started:false, settled:true, outcome:'cancelled' };
+      }
+      let lease = ledger.claim(id, worker, leaseMs, capacity), announced = false;
+      while (!lease && waitForCapacity) {
+        const job = ledger.get(id);
+        if (job.state === 'cancelled') return { started:false, settled:true, outcome:'cancelled' };
+        if (job.state !== 'queued') return { started:false, settled:false, reason:'job-requires-reconciliation' };
+        if (signal.aborted) { ledger.cancel(id); return { started:false, settled:true, outcome:'cancelled' }; }
+        if (!announced) { announced = true; onQueued(job); }
+        await pause(pollMs,undefined,{signal}).catch(error => { if (!signal.aborted) throw error; });
+        if (!signal.aborted && ledger.get(id).state === 'queued') lease = ledger.claim(id,worker,leaseMs,capacity);
+      }
       if (!lease) return { started: false, reason: 'capacity-or-resource-held' };
       let handle, result, failure;
       try {

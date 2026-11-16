@@ -22,3 +22,5 @@ Coordinator checks cover fast permission acknowledgement followed by immediate j
 Source-backed isolated HTTP run 9c4de33af556 passes eight bot messages, approval cards, overlapping desktop tasks and retained outputs using this coordinator and typed driver. The test host supplies synthetic admission and scripted work; real remote capacity and provider execution remain unverified.
 
 Mutual-TLS clients require a SHA-256 server leaf-certificate pin in addition to CA and hostname verification. The transport rejects wrong or missing pins and does not accept caller TLS verification overrides. The 13 transport/client/TLS checks pass after this change. Remote routing remains loopback or an explicitly managed tunnel; no deployment credentials have been created.
+
+The coordinator waits for an occupied assigned desktop with a cancellation signal instead of abandoning the queued turn. It starts only after host-verified resource release. Queued cancellation leaves the current owner untouched; cancellation before dispatch launches nothing. All 70 focused tests pass. Queue acceptance currently uses synthetic host callbacks, not a remote contention run.
