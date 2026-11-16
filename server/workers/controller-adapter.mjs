@@ -16,7 +16,7 @@ export function createWorkerAdapter({ provider, submit, cancel, answer, capabili
       const publish = event => {
         if (binding.turnId !== event.turnId) return;
         if (event.type === 'request.opened') binding.pending.add(event.requestId);
-        emit(event);
+        emit({...event,provider});
       };
       try {
         const started = await submit(input, event => {

@@ -7,7 +7,7 @@ The version1 file requires these fields:
 | Field | Purpose |
 | --- | --- |
 | namespace | Stable ownership namespace for this controller and host |
-| dockerSshAlias | Existing approved SSH alias used by the VPS Docker runner |
+| dockerSshAlias | Existing approved SSH alias, or null for operator-selected local Docker |
 | maxRunning | Explicit host admission ceiling, integer1 through64 |
 | storageImage | Immutable local image ID containing Node and Tini |
 | assignments | Unique bot/project/pool/worker/desktop/workspace mappings |
@@ -23,4 +23,4 @@ Admission queues at maxRunning and releases capacity after matching-generation h
 
 The current Store resolver supports a bot's own direct threads. Shared-room scheduling retains its existing ordering. Provider integrations, model credentials and remote routing need per-worker qualification before deployment. Backup/restore and real-workload capacity remain acceptance work.
 
-Local verification covers default source-app startup through the repository fake-engine launcher and doctor, disabled configuration, prior-lease refusal, queued admission and wrong-generation release refusal. The assembled Docker path passes two synthetic workers plus a later thread. Enabled startup through the complete app still needs acceptance. No production configuration or deployment has been applied.
+Local verification covers default source-app startup through the repository fake-engine launcher and doctor, disabled configuration, prior-lease refusal, queued admission and wrong-generation release refusal. The assembled Docker path passes two synthetic workers plus a later thread. Enabled startup now passes through the complete source app with two synthetic Docker workers, normal approval cards, one-time ACKs, separate Store reports and terminal digests. The first run exposed native-provider event labels crossing the app bus boundary; the adapter now publishes its registered driver identity, and the full-app rerun passes. No production configuration or deployment has been applied.

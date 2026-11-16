@@ -20,7 +20,7 @@ export async function loadConfiguredWorkerStartup({configFile,dataDir,resolveTur
   if(!exact(config,['version','namespace','dockerSshAlias','maxRunning','assignments','pools','policies','storageImage','transport']) ||
      config.version!==1 || !Number.isSafeInteger(config.maxRunning) || config.maxRunning<1 || config.maxRunning>64 ||
      !Array.isArray(config.assignments) || !config.assignments.length || config.assignments.length>64 ||
-     typeof config.dockerSshAlias!=='string' || typeof run!=='function' || typeof route!=='function' || typeof resolveTurn!=='function')
+     (config.dockerSshAlias!==null && typeof config.dockerSshAlias!=='string') || typeof run!=='function' || typeof route!=='function' || typeof resolveTurn!=='function')
     throw Error('Invalid operator worker configuration');
   const transportConfig=config.transport;
   if(!exact(transportConfig,['listenHost','advertisedHost','port','controllerTokenFile','workerTokenFiles','tls']) ||
@@ -30,7 +30,7 @@ export async function loadConfiguredWorkerStartup({configFile,dataDir,resolveTur
   const ids=config.assignments.map(row=>row.worker);
   if(new Set(ids).size!==ids.length || Object.keys(transportConfig.workerTokenFiles).sort().join(',')!==[...ids].sort().join(','))
     throw Error('Worker credentials do not match assignments');
-  const dockerArgs=args=>route(config.dockerSshAlias,args);dockerArgs(['info']);
+  const dockerArgs=args=>config.dockerSshAlias===null?args:route(config.dockerSshAlias,args);dockerArgs(['info']);
   const workers=config.assignments.map(row=>({id:row.worker,capacity:1,token:read(transportConfig.workerTokenFiles[row.worker]).trim(),
     assignments:[{scope:'bot',bot:row.bot,project:row.project,resource:row.desktop,resources:[row.workspace]}]}));
   const tls={key:read(transportConfig.tls.keyFile),cert:read(transportConfig.tls.certFile),ca:read(transportConfig.tls.caFile),

@@ -1,5 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+test('worker bridge publishes the registered adapter identity instead of the native engine label',async()=>{
+  const events=[];let complete;
+  const adapter=createWorkerAdapter({provider:'isolatedWorker',
+    submit:async(input,emit)=>{
+      const completion=new Promise(resolve=>complete=resolve);
+      queueMicrotask(()=>emit({provider:'native-engine',threadId:input.threadId,turnId:'turn',eventId:'permission',
+        type:'request.opened',requestId:'read'}));return{turnId:'turn',completion};
+    },cancel:async()=>true,answer:async()=> 'allowed-once'});
+  adapter.onEvent(event=>events.push(event));
+  await adapter.sendTurn({threadId:'thread'});
+  assert.equal(events.length,1);assert.equal(events[0].provider,'isolatedWorker');
+  complete({settled:true});await new Promise(resolve=>setImmediate(resolve));
+});
 import { createWorkerAdapter } from './controller-adapter.mjs';
 const setup = (overrides = {}) => {
   const streams = new Map(), finishes = new Map(), answers = [];
