@@ -28,3 +28,9 @@ This fixture uses an offline backup-admin role with CHOWN, SETUID, SETGID and DA
 - Keep a separately encrypted copy outside the service volume and test recovery under the chosen retention policy. Provision storage, copy credentials or activate restored workers only under applicable owner approval.
 
 The controller workspace backup deliberately excludes host-bound workers/ authority. This worker-specific check does not change that policy or authorize restoring controller leases from an app backup.
+
+## Controller comparison
+
+recovery-audit.mjs compares trusted restored receipts against a read-only SQLite transaction on the surviving controller journal. It reports active/unresolved jobs, controller jobs absent from the snapshot, generation/outcome mismatches, snapshot jobs absent from the controller, and pending/dispatching/uncertain tool calls. It reads only job identifiers, generations and states; it does not select lease tokens, tool arguments or results. The focused test uses the actual JobLedger and passes on Windows and Linux. The worker suite has 183 passes and three Windows skips.
+
+A consistent report does not authorize activation. Keep admission stopped through audit and activation, preserve the trusted inventory separately from worker-owned files, and reconcile external effects when the report has issues. Automatic quarantine activation and Railway volume replacement remain unqualified.
