@@ -22,7 +22,7 @@ export async function openAccountScopedWorkerTools(args) {
     for(const secret of secrets)text=text.split(secret).join('[redacted]');
     return redactSecretsInText(text);
   };
-  const tools=await mountChatTools(integrations,signal,false,scope,undefined,undefined,input.toolResultFolder,scrub);
+  const tools=await mountChatTools(integrations,signal,false,scope,undefined,undefined,input.toolResultFolder,scrub,undefined,true);
   try {
     signal.throwIfAborted();if(!isCurrent())throw Error('Worker tool mount no longer current');
     const preview=value=>toolDetailPreview(JSON.parse(JSON.stringify(value,(_key,part)=>typeof part==='string'?scrub(part):part)));

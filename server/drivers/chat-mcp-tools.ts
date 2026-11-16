@@ -494,7 +494,7 @@ export function directServers(servers: ReadonlyArray<{ name: string; tools: numb
  * A tool result over 50KB is saved whole in `resultFolder`, the bot's working folder, after `scrub` masks secrets (see savedOrBounded).
  * `toolLimit` is the most tools the provider takes in one request, ask_user included; null when it takes any number. */
 export async function mountChatTools(integrations: SendTurnInput["integrations"], signal: AbortSignal, computerUse = false, toolScope?: ToolScope, callTimeoutMs: number = DEFAULT_CALL_MS,
-  schemaProfile?: ToolSchemaProfile, resultFolder?: string, scrub: (text: string) => string = redactSecretsInText, toolLimit: number | null = CHAT_TOOL_LIMIT): Promise<ChatToolSession> {
+  schemaProfile?: ToolSchemaProfile, resultFolder?: string, scrub: (text: string) => string = redactSecretsInText, toolLimit: number | null = CHAT_TOOL_LIMIT, strictOutcome = false): Promise<ChatToolSession> {
   const parsed = parseToolScope(toolScope);
   if (!parsed.ok) throw new Error(parsed.error);
   const scope = parsed.scope;
@@ -764,13 +764,14 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
       }
       if (result.structuredContent !== undefined) parts.push(JSON.stringify(result.structuredContent));
       if (unsupported) parts.unshift(`[${unsupported} unsupported MCP content item(s) omitted. The operation may have taken effect, but its full result cannot be represented; inspect its state before retrying.]`);
+      if (strictOutcome && unsupported) throw new ChatToolSessionError("MCP result cannot prove the full operation outcome");
       const body = parts.join("\n") || (images.length ? "Screenshot captured." : "(empty result)");
       const hint = tool.builtInBrowser ? loopbackNavigationHint(tool.name, args, body) : "";
       return { text: await savedOrBounded(body, chatToolName(tool.server, tool.name), resultFolder, scrub) + hint, ok: result.isError !== true && unsupported === 0,
         ...(images.length ? { images } : {}) };
     } catch (error) {
       const reason = error instanceof Error ? error.message : "MCP transport failed; execution outcome may be uncertain";
-      if (signal.aborted || callSignal.aborted || tool.required) {
+      if (strictOutcome || signal.aborted || callSignal.aborted || tool.required) {
         await close();
         throw new ChatToolSessionError(reason);
       }

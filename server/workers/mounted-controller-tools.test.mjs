@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';import {join,resolve,dirname} from 'node:path';
+import {JobLedger} from './ledger.mjs';
+import {createDurableToolExecutor} from './tool-executor.mjs';
 import {openAccountScopedWorkerTools} from './mounted-controller-tools.mjs';
 const identity={id:'job',bot:'bot',thread:'thread',project:'project',generation:1};
 
@@ -13,6 +15,7 @@ test('mounted worker tools preserve separate synthetic account environments and 
       const m=JSON.parse(line);
       if(m.method==='initialize')send(m.id,{protocolVersion:'2024-11-05',capabilities:{tools:{}},serverInfo:{name:'fixture',version:'1'}});
       if(m.method==='tools/list')send(m.id,{tools:[{name:'read_account',description:'Synthetic account read',inputSchema:{type:'object',properties:{},additionalProperties:false}}]});
+      if(m.method==='tools/call' && process.env.SYNTHETIC_CRASH_ON_CALL==='1')process.exit(5);
       if(m.method==='tools/call')send(m.id,{content:[{type:'text',text:process.env.SYNTHETIC_ACCOUNT+' '+process.env.SYNTHETIC_TOKEN}]});
     });`);
   const sessions=[];
@@ -38,6 +41,21 @@ test('mounted worker tools preserve separate synthetic account environments and 
       sessions.push(restricted);
       await assert.rejects(restricted.authorize({job:identity,call,signal}),/not advertised|excludes/i);
     }
+    const ledger=new JobLedger(':memory:');
+    ledger.enqueue({id:'job',bot:'bot',thread:'thread',project:'project',resource:'desktop'});
+    const lease=ledger.claim('job','worker',30000),signal=AbortSignal.timeout(10000);
+    let crashing;
+    try {
+      crashing=await openAccountScopedWorkerTools({job:ledger.get('job'),turnId:'crash',signal,isCurrent:()=>ledger.get('job').state==='running',
+        input:{botId:'bot',threadId:'thread',approvalMode:'ask',mcpFromUserConfig:false,integrations:{composio:{command:process.execPath,args:[script],
+          env:{SYNTHETIC_ACCOUNT:'crashing',SYNTHETIC_CRASH_ON_CALL:'1'}}}},
+        emit:event=>{if(event.type==='request.opened')crashing.respondToRequest('thread',event.requestId,{behavior:'allow'});}});
+      const runner=createDurableToolExecutor({ledger,...crashing});
+      await assert.rejects(runner.execute({lease,signal,call:{id:'crash-call',tool:'composio_read_account',arguments:{}}}),/reconciliation/);
+      assert.equal(ledger.get('job').state,'cancelling');
+      assert.equal(ledger.db.prepare('SELECT state FROM worker_tool_calls').get().state,'uncertain');
+      await assert.rejects(runner.execute({lease,signal,call:{id:'new-id',tool:'composio_read_account',arguments:{}}}),/cancelled/);
+    }finally{await crashing?.close();ledger.close();}
   } finally {
     await Promise.all(sessions.map(session=>session.close()));
     if(dirname(resolve(directory))!==resolve(tmpdir()))throw Error('Unexpected fixture path');
