@@ -129,13 +129,13 @@ export class ChatMcpClient {
   private pending = new Map<number, { method: string; resolve(value: unknown): void; reject(error: Error): void }>();
 
   /** `configured`: a server the person set up, whose own environment passes the bot box as theirs. */
-  constructor(server: Server, computerUse = false, configured = false) {
+  constructor(server: Server, computerUse = false, configured = false, sourceEnvironment: NodeJS.ProcessEnv = process.env) {
     this.frameBytes = computerUse ? 32 * 1024 * 1024 : FRAME_BYTES;
     this.configured = Object.values(server.env).filter((value) => value.length >= 6);
     try {
       // The desktop shell inherits Finder's bare PATH, where `npx`-style servers cannot find `node`.
       this.child = spawnCli(server.command, server.args, {
-        stdio: ["pipe", "pipe", "pipe"], env: chatMcpEnvironment(server.env),
+        stdio: ["pipe", "pipe", "pipe"], env: chatMcpEnvironment(server.env, sourceEnvironment),
         ...(configured ? { box: { allowEnv: Object.keys(server.env), configured: true } } : {}),
       }, "bot");
     } catch { throw new Error("MCP server could not start; check its command and installation"); }
