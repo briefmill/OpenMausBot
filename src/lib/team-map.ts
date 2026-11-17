@@ -11,6 +11,7 @@ export interface TeamMapBot {
 }
 
 export interface TeamMapSnapshot {
+  activeBrowsers?: string[];
   collaborations: Array<{ groupId: string; botIds: [string, string]; lastAt: number }>;
   queued: Array<{ sourceBotId: string; targetBotId: string; reason?: string; threadId?: string; groupId?: string }>;
   running: Array<{ sourceBotId: string; targetBotId: string; threadId: string; groupId?: string }>;

@@ -53,3 +53,12 @@ it("blocks guest and shared-service callers", async () => {
   expect((await f.request()).status).toBe(403);
   expect((await f.request({ showScreens: true })).status).toBe(403);
 });
+
+it("saves VM and browser visibility independently across devices", async () => {
+  const f = await fixture();
+  await f.request({ showScreens: true, showBrowsers: false });
+  await f.request({ showBrowsers: true });
+  expect((await (await f.request()).json()).layout).toMatchObject({ showScreens: true, showBrowsers: true });
+  await f.request({ showScreens: false });
+  expect((await (await f.request()).json()).layout).toMatchObject({ showScreens: false, showBrowsers: true });
+});

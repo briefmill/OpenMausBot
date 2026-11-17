@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/state/store";
 import type { Point } from "./team-canvas";
 
-export type MapLayout = { positions: Record<string, Point>; botOrders: Record<string, string[]>; showScreens?: boolean };
+export type MapLayout = { positions: Record<string, Point>; botOrders: Record<string, string[]>; showScreens?: boolean; showBrowsers?: boolean };
 let layout: MapLayout | null = null;
 let generation = 0;
 let pending = 0;
@@ -20,7 +20,7 @@ async function refresh() {
 export function saveMapLayout(patch: Partial<MapLayout>, initialize = false) {
   const revision = ++generation;
   pending++;
-  if (!initialize) publish({ positions: { ...layout?.positions, ...patch.positions }, botOrders: { ...layout?.botOrders, ...patch.botOrders }, ...(layout?.showScreens === undefined ? {} : { showScreens: layout.showScreens }), ...(patch.showScreens === undefined ? {} : { showScreens: patch.showScreens }) });
+  if (!initialize) publish({ positions: { ...layout?.positions, ...patch.positions }, botOrders: { ...layout?.botOrders, ...patch.botOrders }, ...(layout?.showScreens === undefined ? {} : { showScreens: layout.showScreens }), ...(patch.showScreens === undefined ? {} : { showScreens: patch.showScreens }), ...(layout?.showBrowsers === undefined ? {} : { showBrowsers: layout.showBrowsers }), ...(patch.showBrowsers === undefined ? {} : { showBrowsers: patch.showBrowsers }) });
   writing = writing.catch(() => {}).then(async () => {
     const response = await api("/api/team-map/layout", { method: "PATCH", body: JSON.stringify({ ...patch, ...(initialize ? { initialize: true } : {}) }) });
     if (generation === revision && response.layout) publish(response.layout);

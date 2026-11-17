@@ -101,6 +101,7 @@ const isPreviewStreamDialog = (value: unknown): value is PreviewStreamControl["d
 
 /** Client-to-server messages. Coordinates are page CSS px. */
 export type PreviewStreamInput =
+  | { readonly type: "teachStart" | "teachStop" }
   | { readonly type: "takeControl" }
   | { readonly type: "releaseControl" }
   | { readonly type: "dialog"; readonly accept: boolean; readonly promptText?: string }

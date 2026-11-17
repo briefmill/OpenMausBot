@@ -9,7 +9,7 @@ import { PASS, type RouteHandler } from "./table.ts";
 const key = z.string().max(200);
 const positions = z.record(key, z.object({ x: z.number().finite().min(-1e6).max(1e6), y: z.number().finite().min(-1e6).max(1e6) })).refine((v) => Object.keys(v).length <= 200);
 const orders = z.record(key, z.array(z.string().max(200)).max(1000)).refine((v) => Object.keys(v).length <= 200);
-const layoutSchema = z.object({ positions, botOrders: orders, showScreens: z.boolean().optional() });
+const layoutSchema = z.object({ positions, botOrders: orders, showScreens: z.boolean().optional(), showBrowsers: z.boolean().optional() });
 const patchSchema = layoutSchema.partial().extend({ initialize: z.boolean().optional() });
 export type TeamMapLayout = z.infer<typeof layoutSchema>;
 
@@ -30,8 +30,8 @@ export function createTeamMapLayoutRoutes(dataDir: string): RouteHandler {
     if (!parsed.success) return json(res, 400, { error: "Invalid map layout." });
     const current = read();
     const patch = parsed.data;
-    if (patch.initialize && (Object.keys(current.positions).length || Object.keys(current.botOrders).length || current.showScreens !== undefined)) return json(res, 200, { layout: current });
-    const next = layoutSchema.safeParse({ ...current, positions: { ...current.positions, ...patch.positions }, botOrders: { ...current.botOrders, ...patch.botOrders }, ...(patch.showScreens === undefined ? {} : { showScreens: patch.showScreens }) });
+    if (patch.initialize && (Object.keys(current.positions).length || Object.keys(current.botOrders).length || current.showScreens !== undefined || current.showBrowsers !== undefined)) return json(res, 200, { layout: current });
+    const next = layoutSchema.safeParse({ ...current, positions: { ...current.positions, ...patch.positions }, botOrders: { ...current.botOrders, ...patch.botOrders }, ...(patch.showScreens === undefined ? {} : { showScreens: patch.showScreens }), ...(patch.showBrowsers === undefined ? {} : { showBrowsers: patch.showBrowsers }) });
     if (!next.success) return json(res, 400, { error: "Map layout is too large." });
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     writeFileSync(file + ".tmp", JSON.stringify(next.data), { mode: 0o600 });

@@ -98,7 +98,7 @@ function currentActivity(bot: Bot | undefined, instances: ReturnType<typeof useS
   return bot.tasks?.find((task) => task.busy && task.threadId !== bot.threadId && task.title.trim())?.title;
 }
 
-export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemory, onEditTeam, onDeleteTeam, onComputer, onComputerDrop, onTeamComputer, teamComputers = {}, connectedBotIds = [], computers = NO_COMPUTERS, showBrowsers = false, onOpenBrowser, computerFrames = {}, onOpenComputer, taggedBotIds = [], sent, bottomInset = 0 }: {
+export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemory, onEditTeam, onDeleteTeam, onComputer, onComputerDrop, onTeamComputer, teamComputers = {}, connectedBotIds = [], computers = NO_COMPUTERS, showBrowsers = false, activeBrowserIds, onOpenBrowser, computerFrames = {}, onOpenComputer, taggedBotIds = [], sent, bottomInset = 0 }: {
   sections: TeamMapSection<Bot>[];
   canManage: boolean;
   onMove: (bot: Bot, destination: string) => Promise<boolean | void>;
@@ -116,6 +116,7 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
   computers?: MapComputer[];
   showBrowsers?: boolean;
   onOpenBrowser?: (bot: Bot) => void;
+  activeBrowserIds?: string[];
   computerFrames?: Record<string, ShownFrame>;
   onOpenComputer?: (computer: MapComputer) => void;
   /** Bots a message being typed on the map will go to. */
@@ -494,7 +495,7 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
             {geometry.monitors.map((monitor) => {
               if (monitor.id.startsWith("browser:")) {
                 const bot = botById.get(monitor.id.slice(8));
-                return bot ? <BrowserMapNode key={monitor.id} bot={bot} x={monitor.x} y={monitor.y}
+                return bot ? <BrowserMapNode key={monitor.id} bot={bot} x={monitor.x} y={monitor.y} running={activeBrowserIds ? activeBrowserIds.includes(bot.id) : bot.busy}
                   onOpen={onOpenBrowser ? () => onOpenBrowser(bot) : undefined} /> : null;
               }
               const computer = computerById.get(monitor.id);
