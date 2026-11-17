@@ -17,6 +17,6 @@ const names=['native-bootstrap.mjs',...files];
 const manifest={version:1,nodeMajor:24,providers:['claudeAgent','codex'],files:names.map(file=>{
   const bytes=readFileSync(join(output,file));return{path:file,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
 }),credentialsIncluded:false,providerCliIncluded:false,serviceEntrypointIncluded:true,
-capabilities:{nativeProviders:true,controllerToolRelay:true,workerBrowser:false,workerDesktop:false,botDelegation:false},productionReady:false};
+capabilities:{nativeProviders:true,controllerToolRelay:true,workerBrowser:false,workerDesktop:false,botDelegation:true},productionReady:false};
 writeFileSync(join(output,'package.json'),JSON.stringify({type:'module',private:true})+'\n');
 writeFileSync(join(output,'manifest.json'),JSON.stringify(manifest,null,2)+'\n');
