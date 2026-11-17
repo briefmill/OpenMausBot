@@ -1561,11 +1561,14 @@ it("holds a worker browser call behind the existing controller approval session"
   const { createControllerToolSession } = await import("../workers/controller-tool-session.mjs");
   const signal = AbortSignal.timeout(5000);
   let calls = 0;
-  const transport = {
-    async tools() { return [{ name: "agent_browser_click", description: "Click", inputSchema: schema }]; },
-    async call() { calls++; return { content: [{ type: "text", text: "worker click" }] }; },
-    async close() {},
-  };
+  const { createWorkerBrowserTransport } = await import("../workers/browser-mcp-transport.mjs");
+  const transport = createWorkerBrowserTransport({ job: { id: "job", worker: "worker", generation: 1 },
+    lease: { id: "job", worker: "worker", generation: 1, token: "synthetic-token", deadline: Date.now() + 5000 },
+    isCurrent: () => true, client: { async browser({ operation }) {
+      if (operation.method === "tools/list") return { tools: [{ name: "agent_browser_click", description: "Click", inputSchema: schema }] };
+      if (operation.method === "initialize") return {};
+      calls++; return { content: [{ type: "text", text: "worker click" }] };
+    } } });
   const mounted = await mountChatTools({ browser: { command: "must-not-launch-controller-browser", args: [], env: {} } },
     signal, true, undefined, undefined, undefined, undefined, undefined, undefined, true, transport);
   sessions.push(mounted);
