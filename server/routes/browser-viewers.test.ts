@@ -72,7 +72,8 @@ afterEach(async () => {
   for (const folder of folders.splice(0)) await removeTempDir(folder);
 });
 
-async function serve({ attach, current = () => true, download, audience = () => "team" }: {
+async function serve({ attach, current = () => true, download, audience = () => "team", unavailable }: {
+  unavailable?: BrowserViewerRouteDeps["unavailable"];
   attach?: (options: ViewerOptions, push: (output: ViewerOutput) => void) => Promise<Viewer>;
   current?: () => boolean;
   download?: (id: string) => Download | undefined;
@@ -93,6 +94,7 @@ async function serve({ attach, current = () => true, download, audience = () => 
   const upgrades = createUpgrades();
   const deps: BrowserViewerRouteDeps = {
     upgrades,
+    unavailable,
     dataDir: fixture.dataDir,
     person: (auth) => (auth.kind === "session" ? `person-of-${auth.session.id}` : "local-owner"),
     viewers: {
@@ -440,4 +442,24 @@ describe("whose browser a view shows on a Team Cloud", () => {
     expect(await act()).toBe(404);
     expect(fixture.opened).toEqual(["member:p_ada", "member:p_ada"]);
   });
+});
+
+
+it("refuses unavailable worker viewers before opening any controller browser", async () => {
+  const f = await serve({ unavailable: (bot, thread) => {
+    expect(bot).toBe("pepper"); expect(thread).toBe("worker-thread");
+    return { status: 503, error: "Worker browser viewer unavailable" };
+  } });
+  for (const [method, path] of [["GET", "live"], ["POST", "action"], ["POST", "upload"], ["GET", "download/example"]]) {
+    const response = await fetch(`http://${f.origin}/api/bots/pepper/browser/${path}?threadId=worker-thread`, { method });
+    expect(response.status).toBe(503);
+  }
+  expect(f.opened).toHaveLength(0); expect(f.attachments).toHaveLength(0); expect(f.inputs).toHaveLength(0);
+});
+
+it("invalidates an existing controller view when its chat moves to an unavailable worker", async () => {
+  let worker = false;
+  const f = await serve({ unavailable: () => worker ? { status: 503, error: "Worker viewer unavailable" } : null });
+  expect((await fetch(`http://${f.origin}/api/bots/pepper/browser/live`)).status).toBe(204);
+  expect(f.isCurrent()).toBe(true); worker = true; expect(f.isCurrent()).toBe(false);
 });

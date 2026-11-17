@@ -38,6 +38,8 @@ export interface BrowserViewerRouteDeps {
   /** Whose browser of the bot this person's view shows (`threadId` names the conversation they look at); null when
    * they may not see that conversation. */
   audience(auth: RequestAuth, threadId: string | null): Audience | null;
+  /** A selected execution target that has no viewer must never fall back to this host. */
+  unavailable?(botId: string, threadId: string | null): Failure | null;
   /** A bot with its browser on, and the session and spec that audience's browser runs as. */
   browser(botId: string, audience: Audience): Promise<{ botId: string; session: string; spec: Spec } | Failure>;
   /** Hosted workspaces check the member's sign-in again before a view opens. */
@@ -119,6 +121,8 @@ export function createBrowserViewerRoutes(deps: BrowserViewerRouteDeps): RouteHa
     const threadId = url.searchParams.get("threadId");
     const audience = deps.audience(auth, threadId);
     if (!audience) return json(res, 404, { error: "no such conversation" });
+    const unavailable = deps.unavailable?.(botId, threadId);
+    if (unavailable) return json(res, unavailable.status, { error: unavailable.error });
     const browser = await deps.browser(botId, audience);
     if ("error" in browser) return json(res, browser.status, { error: browser.error });
     // Discovery may have awaited while the portal closed this owner's streams: never open a late replacement on the earlier authorization.
@@ -126,7 +130,7 @@ export function createBrowserViewerRoutes(deps: BrowserViewerRouteDeps): RouteHa
     if (failure) return json(res, failure.status, { error: failure.error });
     const owner = ownerOf(auth);
     const person = deps.person(auth);
-    const isCurrent = () => deps.audience(auth, threadId) === audience && deps.current(browser.botId, browser.session, auth, audience);
+    const isCurrent = () => !deps.unavailable?.(botId, threadId) && deps.audience(auth, threadId) === audience && deps.current(browser.botId, browser.session, auth, audience);
 
     if (live) {
       if (method === "GET" && live[2] === "live") {

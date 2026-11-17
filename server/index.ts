@@ -12427,6 +12427,12 @@ ROUTES.push(desktopViewer.route, phoneScreen.route);
 ROUTES.push(createBrowserViewerRoutes({
   upgrades, viewers: browserLive, dataDir: DATA_DIR, person: (auth) => (auth.kind === "session" ? actorKey(auth) : "local-owner"),
   audience: (auth, threadId) => teamHost.viewerBrowserAudience({ threadId, sees: (id) => visibleTo(viewerFor(auth)).thread(id), person: auth.kind === "session" ? actorKey(auth) : null }),
+  unavailable: (botId, threadId) => {
+    const bot = store.bot(botId);
+    const selected = (threadId && botForThread(botId, threadId)) || bot;
+    return selected && registry.get(selected.modelSelection.instanceId)?.driverKind === "isolatedWorker"
+      ? { status: 503, error: "This bot uses an independent worker. Its browser viewer is not connected yet; the controller browser will not be opened." } : null;
+  },
   browser: async (botId, audience) => {
     const bot = store.bot(botId);
     if (!bot) return { status: 404, error: "no such bot" };
