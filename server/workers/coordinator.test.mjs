@@ -218,3 +218,31 @@ test('34 independent bot assignments overlap while a busy desktop keeps its next
     assert.equal(reports.filter(event=>event.threadId==='followup' && event.text==='bot-0').length,1);
   }finally{release();if(active===0)c.close();else c.ledger.close();}
 });
+
+
+test('worker browser catalogs mount after host startup and retain controller approvals',async()=>{
+  const {openAccountScopedWorkerTools}=await import('./mounted-controller-tools.mjs');
+  let started=false,mounted=0,executed=0,closed=0,adapter;
+  const c=createWorkerCoordinator({file:':memory:',assignments,pools,signal:AbortSignal.timeout(5000),
+    resolveTurn:(bot,thread)=>({bot,thread,requestId:'browser-request',active:true}),
+    openTools:args=>openAccountScopedWorkerTools({...args,browserTransport:{
+      async tools(){assert.equal(started,true);mounted++;return[{name:'agent_browser_click',description:'Synthetic click',inputSchema:{type:'object',properties:{ref:{type:'string'}},required:['ref'],additionalProperties:false}}];},
+      async call(){executed++;return{content:[{type:'text',text:'worker browser clicked'}]};},
+      async close(){closed++;}}}),
+    host:{admit:async()=>{},health:async()=>true,launch:async()=>({}),
+      execute:async({lease,signal})=>{
+        assert.equal(mounted,0);started=true;
+        const catalog=await c.tools.list({lease});assert.equal(catalog[0].function.name,'browser_agent_browser_click');
+        const request={lease,signal,call:{id:'browser-click',tool:'browser_agent_browser_click',arguments:{ref:'e1'}}};
+        assert.equal((await c.tools.execute(request)).result.ok,true);assert.equal((await c.tools.execute(request)).replay,true);
+        return{ok:true};
+      },stop:async()=>{},inspectStopped:async()=>true}});
+  try{
+    adapter=await c.bootstrap.createAdapter({instanceId:'worker',pool:'pool'});
+    adapter.onEvent(event=>{if(event.type==='request.opened'){assert.equal(executed,0);void adapter.respondToRequest(event.threadId,event.requestId,{behavior:'allow'});}});
+    await adapter.sendTurn({botId:'bot-a',threadId:'thread',text:'Synthetic browser task',approvalMode:'ask',mcpFromUserConfig:false,
+      integrations:{browser:{command:'must-not-launch-controller-browser',args:[],env:{}},localComputer:{command:'must-not-launch-host-computer',args:[],env:{}}}});
+    const results=await c.drain();assert.equal(results[0].value.outcome,'completed');
+    assert.equal(mounted,1);assert.equal(executed,1);assert.equal(closed,1);
+  }finally{c.close();}
+});
