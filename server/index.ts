@@ -239,6 +239,7 @@ import { createOneOnOneGoals } from "./host/one-on-one-goals.ts";
 import { BUILT_IN_DRIVERS } from "./drivers/builtIn.ts";
 import { withWorkerDriver } from "./workers/registration.ts";
 import { loadConfiguredWorkerStartup } from "./workers/startup.mjs";
+import { resolveOwnedWorkerTurn } from "./workers/turn-resolver.mjs";
 import { openCodeProviderKeysAllowed, setOpenCodeProviderKeyPolicy } from "./drivers/acp/opencode-go.ts";
 import { forgetNotificationReader, liveAppRows, openCardRows, readMessageText, recallMessages, recentMessages, closeMessageSearch, closeMessageDb, chatFollowups, cancelledChatFollowup, settleChatFollowups, threadsReferencing, logNotification, lastRowAt, threadsWithCardsSince } from "./message-db.ts";
 import { briefCrossingLabel, claimRecallCrossings, recallCrossingLabel } from "./recall-disclosure.ts";
@@ -824,10 +825,9 @@ function customDomainStatus() {
 const workerStartup = await loadConfiguredWorkerStartup({
   configFile: process.env.OMB_WORKER_HOST_CONFIG, dataDir: DATA_DIR, run: vps.defaultRunner, route: vps.vpsDockerArgs,
   resolveTurn: (botId, threadId) => {
-    const owner = store.botByThread(threadId);
-    const request = store.messagesFor(threadId).findLast(message => message.role === "user");
-    return { bot: owner?.id, thread: threadId, requestId: request?.id,
-      active: owner?.id === botId && request?.requestPending === true };
+    return resolveOwnedWorkerTurn({ botId, threadId, ownerBotId: store.botByThread(threadId)?.id,
+      claim: directTurnDispatchClaims.get(threadId), request: directRequestOwners.get(threadId),
+      busy: store.taskByThread(botId, threadId)?.busy === true });
   },
 }).catch(() => { console.error("workers: host configuration unavailable; existing providers remain enabled"); return null; });
 const providerDrivers = withWorkerDriver(BUILT_IN_DRIVERS, workerStartup?.bootstrap);
