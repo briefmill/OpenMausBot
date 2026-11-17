@@ -26,6 +26,7 @@ it("shows coordinate_bots work on the team map while it runs, with ids only", as
     const workThread = nodes().find(node => node.botId === teammate.id)!.threadId;
 
     const live = await api("/api/team-map");
+    expect(live.activeBrowsers).toEqual([]);
     expect(live.running).toEqual([{ sourceBotId: sender.id, targetBotId: teammate.id, threadId: workThread }]);
     expect(JSON.stringify(live)).not.toContain("PRIVATE_REQUEST_TEXT");
 
