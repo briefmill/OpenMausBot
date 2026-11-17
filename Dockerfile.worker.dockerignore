@@ -24,3 +24,5 @@
 !dist-worker/worker-mcp-bridge.mjs
 !dist-worker/worker-mcp-stdio.mjs
 !dist-worker/worker-tool-proxy.mjs
+
+!dist-worker/browser-executor.mjs

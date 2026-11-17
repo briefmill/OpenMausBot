@@ -10,10 +10,13 @@ const yaml={name:'worker-yaml-esm',setup(build){build.onResolve({filter:/^yaml$/
 await build({entryPoints:[join(root,'server','workers','native-bootstrap.mjs')],outfile:join(output,'native-bootstrap.mjs'),
   bundle:true,platform:'node',target:'node24',format:'esm',plugins:[yaml,serverLocalePlugin],
   banner:{js:'import {createRequire as __ombWorkerRequire} from "node:module"; const require=__ombWorkerRequire(import.meta.url);'},logLevel:'info'});
+await build({entryPoints:[join(root,'server','workers','browser-executor.mjs')],outfile:join(output,'browser-executor.mjs'),
+  bundle:true,platform:'node',target:'node24',format:'esm',plugins:[yaml,serverLocalePlugin],
+  banner:{js:'import {createRequire as __ombBrowserRequire} from "node:module"; const require=__ombBrowserRequire(import.meta.url);'},logLevel:'info'});
 const files=['worker-tool-proxy.mjs','worker-mcp-bridge.mjs','worker-mcp-stdio.mjs','runtime-preflight.mjs','runtime-probe-server.mjs','service-storage.mjs','service-entry.mjs','service-health.mjs','worker-process.mjs','process-client.mjs','service-host.mjs','service-execution.mjs','linux-service-supervisor.mjs',
   'service-transport.mjs','worker-client.mjs','worker-assignment.mjs','provider-runner.mjs','event-wire.mjs','tls-request.mjs','transport-address.mjs'];
 for(const file of files)copyFileSync(join(root,'server','workers',file),join(output,file));
-const names=['native-bootstrap.mjs',...files];
+const names=['native-bootstrap.mjs','browser-executor.mjs',...files];
 const manifest={version:1,nodeMajor:24,providers:['claudeAgent','codex'],files:names.map(file=>{
   const bytes=readFileSync(join(output,file));return{path:file,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
 }),credentialsIncluded:false,providerCliIncluded:false,serviceEntrypointIncluded:true,
