@@ -45,7 +45,7 @@ export function BrowserMapNode({ bot, x, y, onOpen }: { bot: Bot; x: number; y: 
     return () => { client.stop(); painter.stop(); setPainted(null); };
   }, [bot.id, bot.browserProfile, bot.busy, threadId, visible, inView, frameKey]);
   return <ComputerNode computer={{ id: `browser:${bot.id}`, kind: "bot", name: bot.name, botIds: [bot.id], state: status }}
-    bots={[bot]} x={x} y={y} state={status} onOpen={onOpen} label={t("mapBrowser.name", { name: bot.name })}
+    previewKind="browser" bots={[bot]} x={x} y={y} state={status} onOpen={onOpen} label={t("mapBrowser.name", { name: bot.name })}
     surface={<span className="relative block size-full">
       <canvas ref={canvas} aria-hidden className={`size-full object-contain ${showing ? "" : "invisible"}`} />
       {!showing && <span className="absolute inset-0 flex items-center justify-center px-3 text-center text-[11px] text-white/45">{t(bot.busy ? "mapBrowser.waiting" : "mapBrowser.idle")}</span>}
