@@ -148,6 +148,28 @@ suite("the v2 stream on real Chrome", () => {
     client.send({ type: "mouse", action: "up", x, y, button: "left", buttons: 0, clickCount: 1, modifiers: 0 });
   };
 
+  it("records teaching actions while the person controls the browser and stops on request", async () => {
+    await opened("/teach", `<!doctype html><input id="secret" type="password" style="position:absolute;left:20px;top:20px;width:200px;height:40px"><button id="save" style="position:absolute;left:20px;top:100px" onclick="fetch('/report.csv?token=private-token')">Save draft</button>`);
+    const client = await connect("width=1280&height=800&maxWidth=1280&maxHeight=800");
+    await takeControl(client);
+    client.send({ type: "teachStart" });
+    await until(() => client.messages.filter((m) => m.type === "teaching"), (messages) => messages.some((m) => (m.event as Record<string, unknown>)?.kind === "started"));
+    click(client, 40, 40);
+    client.send({ type: "text", text: "private-password" });
+    click(client, 40, 110);
+    await until(() => client.messages.filter((m) => m.type === "teaching").map((m) => m.event as Record<string, unknown>), (events) => events.some((event) => event.kind === "network"));
+    client.send({ type: "teachStop" });
+    await until(() => client.messages.filter((m) => m.type === "teaching"), (messages) => messages.some((m) => (m.event as Record<string, unknown>)?.kind === "stopped"));
+    const captured = client.messages.filter((m) => m.type === "teaching").map((m) => m.event as Record<string, unknown>);
+    expect(captured).toContainEqual(expect.objectContaining({ kind: "action", action: "mouse", target: expect.objectContaining({ id: "save", selector: "#save", label: "Save draft" }) }));
+    expect(JSON.stringify(captured)).not.toContain("private-password");
+    expect(JSON.stringify(captured)).not.toContain("private-token");
+    const count = captured.length;
+    click(client, 40, 110); await sleep(250);
+    expect(client.messages.filter((m) => m.type === "teaching")).toHaveLength(count);
+    await client.close();
+  }, hostTimeout(45_000));
+
   it("fills the panel: a 1600x1000 panel gets a 1600x1000 page and 3200x2000 frames on a 2x screen, and follows its resizes", async () => {
     await opened("/animated", ANIMATED);
     expect(await pageSize()).toEqual([1280, 800, 2]);

@@ -1,3 +1,5 @@
+import { pendingBrowserTeaching, teachingKey, watchBrowserTeaching } from "@/lib/browser-teaching";
+import { browserScope as teachingBrowserScope } from "@/lib/team-browser";
 import { boatCapableEngine, cloudEngineOf } from "@/lib/remote-desktop";
 import { canWorkOnCloud } from "../../shared/cloud-computer";
 import { viewerTargetId } from "../../shared/desktop-viewer";
@@ -250,6 +252,12 @@ export function ComputerPanel({
   const errorText = panelErrorText(error);
   const advanced = useAdvancedMode();
   const [storedPanelView, setPanelView] = useState<ComputerPanelView>(() => readComputerPanelView(bot.id));
+  useEffect(() => {
+    const selectTraining = () => {
+      if (pendingBrowserTeaching(teachingKey(bot.id, teachingBrowserScope(state.config?.team, bot.threadId).threadId))) setPanelView("browser");
+    };
+    selectTraining(); return watchBrowserTeaching(selectTraining);
+  }, [bot.id, bot.threadId, state.config?.team]);
   const requestedDataResult = state.dataResultFocus?.botId === bot.id ? state.dataResultFocus : undefined;
   const [dataRequest, setDataRequest] = useState<{ id: string; requestId: number }>();
   const androidStatus = useAndroidUsbDevices(usbPhoneTakeoverEnabled(state.config));
@@ -308,7 +316,7 @@ export function ComputerPanel({
     if (previous === panelTargetKey && (explicitPanelView.current || !(bot.computer === "browser" && browserEnabled))) return;
     if (previous !== panelTargetKey) explicitPanelView.current = false;
     previousPanelTarget.current = panelTargetKey;
-    setPanelView(bot.computer === "browser" && browserEnabled ? "browser"
+    setPanelView(pendingBrowserTeaching(teachingKey(bot.id, teachingBrowserScope(state.config?.team, bot.threadId).threadId)) || bot.computer === "browser" && browserEnabled ? "browser"
       : previous === null ? readComputerPanelView(bot.id) : "computer");
   }, [panelTargetKey, bot.id, bot.computer, browserEnabled]);
 

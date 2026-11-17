@@ -1,3 +1,6 @@
+import { browserScope } from "@/lib/team-browser";
+import { isBrowserDemonstration } from "../../shared/learn-request";
+import { requestBrowserTeaching, teachingKey } from "@/lib/browser-teaching";
 import { directMessageSent, roomMessageSent } from "@/lib/product-events";
 import { TeamAudienceLabel } from "./TeamSideSwitch";
 import { useComposerDictation } from "@/lib/use-composer-dictation";
@@ -400,7 +403,7 @@ export function Composer({
     });
   };
   const teachTask = () => {
-    const learn = "/learn ";
+    const learn = "/learn watch me ";
     editText(learn + text.replace(/^\/learn\s*/, "").trimStart());
     setCaret(learn.length);
     setChannelMode("chat");
@@ -588,6 +591,10 @@ export function Composer({
       });
       roomMessageSent(effectiveChannelMode, busy);
     } else if (bot) {
+      if (isBrowserDemonstration(body)) {
+        requestBrowserTeaching(teachingKey(bot.id, browserScope(state.config?.team, threadId).threadId), body);
+        dispatch({ type: "toggleComputer", botId: bot.id, open: true });
+      }
       const points = effectiveChannelMode === "goal" ? null : takePointedChips(threadId);
       const page = effectiveChannelMode === "goal" ? undefined : openPageFor(threadId);
       dispatch({

@@ -20,7 +20,6 @@ import { TeamDialog } from "./TeamDialog";
 import { TeamMemoryDialog } from "./TeamMemoryDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { intlLocale, t } from "@/lib/i18n";
-import { builtInBrowserEnabled } from "@/lib/feature-flags";
 import { writeComputerPanelView } from "@/lib/computer-panel-view";
 import { rememberComputerPanelOpen } from "@/lib/computer-panel-focus";
 import { CanvasComputers } from "./CanvasComputers";
@@ -297,10 +296,11 @@ export function TeamMapPage() {
     return buildTeamMapSections(bots, names).sort((a, b) => order(a.key) - order(b.key));
   }, [bots, state.sections, state.groups]);
   const edges = useMemo(() => buildTeamMapEdges(bots, snapshot), [bots, snapshot]);
-  const browserPreviewsAvailable = builtInBrowserEnabled(state.config) && state.config?.browserEngine?.engine === "chrome";
-  const anyComputer = browserPreviewsAvailable && bots.some((bot) => bot.browser !== false && bot.busy) || bots.some((bot) => bot.computer === "cloud" && bot.cloudBackend !== "vps") || computers.some((computer) => computer.section !== null);
+  const browserPreviewsAvailable = state.config?.browserEngine?.engine === "chrome";
+  const anyComputer = bots.some((bot) => bot.computer === "cloud" && bot.cloudBackend !== "vps") || computers.some((computer) => computer.section !== null);
   const { show: showComputers, loaded: computersChoiceLoaded, choose: setShowComputers } = useShowComputers(anyComputer);
-  const mapComputers = useMapComputers(!remoteClient && computersChoiceLoaded && showComputers);
+  const { show: showBrowsers, loaded: browsersChoiceLoaded, choose: setShowBrowsers } = useShowComputers(false, "showBrowsers");
+  const mapComputers = useMapComputers(computersChoiceLoaded && showComputers);
   const [taggedBotIds, setTaggedBotIds] = useState<string[]>([]);
   const [sent, setSent] = useState<{ botIds: string[]; key: number } | null>(null);
   const sentTimer = useRef<number | undefined>(undefined);
@@ -364,16 +364,22 @@ export function TeamMapPage() {
           </div>
           <p className="mt-1 text-[12px] text-ink-secondary">{t("canvas.description")}</p>
         </div>
-        {!remoteClient && <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <button onClick={() => setShowComputers(!showComputers)} aria-pressed={showComputers} title={t("canvas.showComputersHint")}
             className={cn("flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] font-medium transition-colors", showComputers ? "border-accent/40 bg-accent/10 text-ink" : "border-hairline/60 bg-panel text-ink-secondary hover:bg-control hover:text-ink")}>
             <span aria-hidden className={cn("relative h-4 w-7 shrink-0 rounded-full transition-colors", showComputers ? "bg-accent" : "bg-control")}>
               <span className={cn("absolute top-0.5 size-3 rounded-full bg-white shadow-sm transition-[left]", showComputers ? "left-3.5" : "left-0.5")} />
             </span>
-            {t("canvas.showComputers")}
+            Show VM screens
           </button>
-          <button onClick={() => setComputersOpen((value) => !value)} aria-label={t("canvas.computers")} aria-expanded={computersOpen} className="rounded-lg p-2 text-ink-secondary hover:bg-control hover:text-ink"><Monitor size={17} /></button>
-          {admin !== false && <details className="relative" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute("open"); }} onKeyDown={(event) => {
+          <button type="button" onClick={() => setShowBrowsers(!showBrowsers)} aria-pressed={showBrowsers} disabled={!browserPreviewsAvailable}
+            title={browserPreviewsAvailable ? "Show live previews of bots’ existing browsers" : "The connected server needs the Chrome browser engine"}
+            className={cn("flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] font-medium disabled:opacity-40", showBrowsers ? "border-accent/40 bg-accent/10 text-ink" : "border-hairline/60 bg-panel text-ink-secondary hover:bg-control")}>
+            <span aria-hidden className={cn("relative h-4 w-7 shrink-0 rounded-full", showBrowsers ? "bg-accent" : "bg-control")}><span className={cn("absolute top-0.5 size-3 rounded-full bg-white shadow-sm", showBrowsers ? "left-3.5" : "left-0.5")} /></span>
+            Show browsers
+          </button>
+          {!remoteClient && <button onClick={() => setComputersOpen((value) => !value)} aria-label={t("canvas.computers")} aria-expanded={computersOpen} className="rounded-lg p-2 text-ink-secondary hover:bg-control hover:text-ink"><Monitor size={17} /></button>}
+          {!remoteClient && admin !== false && <details className="relative" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute("open"); }} onKeyDown={(event) => {
             if (event.key === "Escape") { event.currentTarget.removeAttribute("open"); event.currentTarget.querySelector("summary")?.focus(); }
           }}>
             <summary aria-label={t("canvas.addToMap")} className="flex cursor-pointer list-none items-center gap-1.5 rounded-lg border border-hairline/60 bg-panel px-3 py-2 text-[12px] font-medium hover:bg-control [&::-webkit-details-marker]:hidden"><Plus size={14} /> {t("common.add")}</summary>
@@ -385,7 +391,7 @@ export function TeamMapPage() {
               {placeOffered("vm", state.config) && <button className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-[12px] hover:bg-control" onClick={() => dispatch({ type: "toggleAppSettings", section: "computer", open: true })}><Monitor size={14} />{t("canvas.localVm")}</button>}
             </div>
           </details>}
-        </div>}
+        </div>
       </header>
       {(error || refreshError) && <div role="alert" className="flex shrink-0 items-center justify-between gap-3 border-b border-danger/20 bg-danger/10 px-6 py-2 text-[12px] text-danger">
         {error || refreshError}
@@ -396,8 +402,8 @@ export function TeamMapPage() {
       <TeamCanvas sections={sections} canManage={!remoteClient && admin !== false} onMove={requestMove} taggedBotIds={taggedBotIds} sent={sent} bottomInset={bots.length ? 96 : 0}
         connectedBotIds={state.settingsOpen ? edges.flatMap((edge) => edge.sourceBotId === state.selectedId ? [edge.targetBotId] : edge.targetBotId === state.selectedId ? [edge.sourceBotId] : []) : []}
         onComputer={(bot) => openBotSettings(dispatch, "access", { botId: bot.id })}
-        computers={showComputers && computersChoiceLoaded && !remoteClient ? mapComputers.computers : undefined} computerFrames={mapComputers.frames}
-        showBrowsers={showComputers && computersChoiceLoaded && !remoteClient && browserPreviewsAvailable}
+        computers={showComputers && computersChoiceLoaded ? mapComputers.computers : undefined} computerFrames={mapComputers.frames}
+        showBrowsers={showBrowsers && browsersChoiceLoaded && browserPreviewsAvailable}
         onOpenBrowser={(bot) => {
           writeComputerPanelView(bot.id, "browser");
           rememberComputerPanelOpen({ botId: bot.id, opener: document.activeElement instanceof HTMLElement ? document.activeElement : null, tabs: true, browser: true });

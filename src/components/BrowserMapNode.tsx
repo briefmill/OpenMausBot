@@ -41,7 +41,6 @@ export function BrowserMapNode({ bot, x, y, onOpen }: { bot: Bot; x: number; y: 
       onUnauthorized: () => { setPainted(null); setStatus("off"); },
       onGone: () => { setPainted(null); setStatus("off"); },
       onHostSetup: () => { setPainted(null); setStatus("problem"); },
-      onControl: (control) => { if (control.controller !== "agent") { setPainted(null); setStatus("idle"); } },
     });
     return () => { client.stop(); painter.stop(); setPainted(null); };
   }, [bot.id, bot.browserProfile, bot.busy, threadId, visible, inView, frameKey]);

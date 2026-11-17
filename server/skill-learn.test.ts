@@ -81,3 +81,10 @@ describe("a run saved from the card, in plain words", () => {
         expect(parseLearnCommand(plain)).toBeNull();
     });
 });
+
+it("waits for demonstration evidence before authoring a watch-me skill", () => {
+  const prompt = expandLearnTurnText("/learn watch me update a lead form");
+  expect(prompt).toContain("Do not create or update a skill from this opening brief");
+  expect(prompt).toContain("Do not operate the browser");
+  expect(prompt).not.toContain('action="create"');
+});

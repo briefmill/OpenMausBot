@@ -143,7 +143,7 @@ export function useMapComputers(enabled: boolean) {
 
 /** "Show computers", remembered per workspace like the canvas layout; until chosen, on whenever there is a computer to
  * show. `loaded` turns true once the saved choice has been read, so a hidden map never starts watching on load. */
-export function useShowComputers(defaultOn: boolean): { show: boolean; loaded: boolean; choose: (on: boolean) => void } {
+export function useShowComputers(defaultOn: boolean, preference: "showScreens" | "showBrowsers" = "showScreens"): { show: boolean; loaded: boolean; choose: (on: boolean) => void } {
   const syncedLayout = useSyncedMapLayout();
   const [key, setKey] = useState<string | null>(null);
   const [chosen, setChosen] = useState<boolean | null>(null);
@@ -152,7 +152,7 @@ export function useShowComputers(defaultOn: boolean): { show: boolean; loaded: b
     let active = true;
     void api("/.well-known/openmausbot/environment", { signal: AbortSignal.timeout(5_000) }).then((environment) => {
       if (!active || typeof environment.environmentId !== "string") return;
-      const storageKey = `omb-team-canvas:${environment.environmentId}:computers`;
+      const storageKey = `omb-team-canvas:${environment.environmentId}:${preference === "showScreens" ? "computers" : "browsers"}`;
       setKey(storageKey);
       try {
         const saved = localStorage.getItem(storageKey);
@@ -160,13 +160,13 @@ export function useShowComputers(defaultOn: boolean): { show: boolean; loaded: b
       } catch {}
     }).catch(() => {}).finally(() => { if (active) setLoaded(true); });
     return () => { active = false; };
-  }, []);
-  useEffect(() => { if (syncedLayout?.showScreens !== undefined) setChosen(syncedLayout.showScreens); }, [syncedLayout]);
+  }, [preference]);
+  useEffect(() => { if (syncedLayout?.[preference] !== undefined) setChosen(syncedLayout[preference]!); }, [syncedLayout, preference]);
   const choose = useCallback((on: boolean) => {
-    saveMapLayout({ showScreens: on });
+    saveMapLayout({ [preference]: on });
     setChosen(on);
     if (!key) return;
     try { localStorage.setItem(key, on ? "on" : "off"); } catch {}
-  }, [key]);
+  }, [key, preference]);
   return { show: chosen ?? defaultOn, loaded, choose };
 }
