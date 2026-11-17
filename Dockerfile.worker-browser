@@ -1,0 +1,11 @@
+ARG WORKER_PROVIDER_IMAGE
+FROM ${WORKER_PROVIDER_IMAGE}
+USER 0:0
+RUN apt-get update && apt-get install -y --no-install-recommends chromium fonts-liberation && rm -rf /var/lib/apt/lists/*
+RUN npm install -g --cache /tmp/omb-browser-npm agent-browser@0.37.0 \
+ && agent-browser --version \
+ && native="$(readlink -f "$(command -v agent-browser)")" \
+ && echo "78e0c5a14a7fa1f3d1ae2acdbdcc94a047b435b998a8c505fcc49d7fa4935a49  $native" | sha256sum -c - \
+ && chmod -R go-w /usr/local \
+ && rm -rf /tmp/omb-browser-npm
+ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
