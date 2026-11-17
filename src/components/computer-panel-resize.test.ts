@@ -47,6 +47,14 @@ describe("the computer panel's resize edge", () => {
     expect(localStorage.getItem("omb-computer-panel-width")).toBe(String(PANEL_MAX_WIDTH - 40));
   });
 
+  it("lets an existing maximum-width panel expand another thirty percent", () => {
+    localStorage.setItem("omb-computer-panel-width", "960");
+    act(() => root.render(createElement(Panel)));
+    for (let step = 0; step < 8; step++) press("ArrowLeft");
+    expect(width).toBe(1248);
+    expect(localStorage.getItem("omb-computer-panel-width")).toBe("1248");
+  });
+
   it("ignores a stored width outside the bounds", () => {
     localStorage.setItem("omb-computer-panel-width", "5000");
     act(() => root.render(createElement(Panel)));
