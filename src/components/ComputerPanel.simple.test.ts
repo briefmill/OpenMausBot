@@ -77,7 +77,7 @@ vi.mock("./AndroidDevicePanel", () => ({
   AndroidDevicePanel: () => null,
   useAndroidUsbDevices: () => ({ devices: fixture.android ? [{ serial: "p1" }] : [] }),
 }));
-vi.mock("./BrowserPanel", () => ({ BrowserPanel: () => createElement("div", null, "BROWSER-PANEL") }));
+vi.mock("./BrowserPanel", () => ({ BrowserPanel: ({ accessControl }: { accessControl?: ReactNode }) => createElement("section", null, "BROWSER-PANEL", accessControl) }));
 vi.mock("./CloudScreenPreview", () => ({ CloudScreenPreview: () => null }));
 vi.mock("./LocalScreenPreview", () => ({ LocalScreenPreview: () => null }));
 vi.mock("./LinuxLocalControl", () => ({ LinuxLocalControl: () => null }));
@@ -348,7 +348,7 @@ describe("Simple Browser tab with the browser off", () => {
     expect(browserSwitch(rendered).props.disabled).toBe(true);
   });
 
-  it("shows the real browser once it is on, under a switch that turns it off for this bot only", () => {
+  it("passes the access switch into the real browser and turns it off for this bot only", () => {
     fixture.view.current = "browser";
     const rendered = render(makeBot());
     expect(rendered.html).toContain("BROWSER-PANEL");
@@ -369,7 +369,7 @@ describe("Simple Browser tab with the browser off", () => {
 });
 
 function browserSwitch(rendered: ReturnType<typeof render>) {
-  return rendered.nodes.find((node) => node.props["aria-label"] === "Let Scout use a browser")!;
+  return [...rendered.nodes, ...rendered.nodes.flatMap(node => nodes(node.props.accessControl as ReactNode))].find((node) => node.props["aria-label"] === "Let Scout use a browser")!;
 }
 
 describe("Where the bot works", () => {

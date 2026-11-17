@@ -126,3 +126,10 @@ it("places browser control below the page in its bottom toolbar", () => {
   expect(page).not.toBeNull();
   expect(page!.compareDocumentPosition(toolbar!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 });
+
+it("keeps browser access inside the bottom toolbar beside the page controls", () => {
+  flushSync(() => root.render(createElement(LiveBrowser, { bot, accessControl: createElement("button", { role: "switch", "aria-label": "Browser access", "aria-checked": true }, "Browser") })));
+  const access = host.querySelector('[aria-label="Browser access"]');
+  expect(access?.closest('footer[role="toolbar"]')).not.toBeNull();
+  expect(access?.closest('footer')).toBe(panel().querySelector('footer'));
+});

@@ -1074,19 +1074,17 @@ export function ComputerPanel({
     dispatch({ type: "updateBot", botId: profileBot.id, patch: { browser: false } });
   };
   const browserSwitchRow = (
-    <div data-testid="browser-switch-row" className="mb-3 flex items-center gap-3 rounded-xl bg-card px-3 py-2.5">
-      <Globe size={15} className="shrink-0 text-ink-secondary" aria-hidden="true" />
-      <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-medium text-ink">{t("computer.browserSwitch.title", { name: bot.name })}</div>
-        {!browserCanTurnOn && <div className="text-[12px] text-ink-secondary">{browserUnavailableReason(state.config)}</div>}
-      </div>
+    <label data-browser-access title={t("computer.browserSwitch.title", { name: bot.name })}
+      style={{ display: "inline-flex", alignItems: "center", gap: "calc(var(--spacing) * 2)", marginInlineEnd: "auto" }}>
+      <Globe size={15} aria-hidden="true" />
+      <small>{t("computer.tab.browser")}</small>
       <Switch
         checked={browserEnabled}
         disabled={browserTurningOn || (!browserEnabled && !browserCanTurnOn)}
         aria-label={t("computer.browserSwitch.title", { name: bot.name })}
         onClick={() => (browserEnabled ? turnOffBrowser() : void turnOnBrowser())}
       />
-    </div>
+    </label>
   );
 
   const managedPolicy = state.config?.managedPolicy;
@@ -1260,9 +1258,8 @@ export function ComputerPanel({
         </div>
       ) : panelView === "browser" && browserEnabled ? (
         <div {...tabPanelProps("browser")} className={cn("flex min-h-0 flex-1 flex-col px-4 pb-4", TAB_PANEL_FOCUS)}>
-          {browserSwitchRow}
           {signInHelp?.place === "browser" && <div className="-mt-1 mb-3">{signInBanner()}</div>}
-          <BrowserPanel bot={bot} signIn={signInRequest} page={pageRequest} />
+          <BrowserPanel bot={bot} signIn={signInRequest} page={pageRequest} accessControl={browserSwitchRow} />
           {errorText && (
             <div role="alert" className="mt-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
               {errorText}
@@ -1271,7 +1268,6 @@ export function ComputerPanel({
         </div>
       ) : panelView === "browser" ? (
         <div {...tabPanelProps("browser")} className={cn("flex-1 overflow-y-auto px-5 pb-5", TAB_PANEL_FOCUS)} data-testid="browser-off">
-          {browserSwitchRow}
           <div className="mt-2 flex flex-col items-center gap-3 rounded-xl bg-card px-6 py-8 text-center">
             <Globe size={22} className="text-ink-secondary" aria-hidden="true" />
             <div className="text-[14px] font-medium text-ink">{t("computer.browserOff.title")}</div>
@@ -1283,6 +1279,7 @@ export function ComputerPanel({
                 {errorText}
               </div>
             )}
+            {browserSwitchRow}
           </div>
         </div>
       ) : panelView === "data" ? (

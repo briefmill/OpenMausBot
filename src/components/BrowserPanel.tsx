@@ -1,6 +1,6 @@
 import { browserMessage } from "@/lib/browser-picker";
 import { BrowserElementPicker } from "./browser/BrowserElementPicker";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Globe, Hand, Loader2, LockKeyhole, Moon, X } from "lucide-react";
 import { browserUnavailableReason } from "@/lib/feature-flags";
 import { t } from "@/lib/i18n";
@@ -41,7 +41,7 @@ function tabsOf(value: unknown): BrowserTab[] {
  * it, else over the v1 live view. Security: a new connection never replays old input. Only the server gives this view a
  * hold: one of the same person's, when none of their views uses it or when they take it over here.
  */
-export function LiveBrowser({ bot, signIn, page }: { bot: Bot; signIn?: BrowserSignIn; page?: BrowserPage }) {
+export function LiveBrowser({ bot, signIn, page, accessControl }: { bot: Bot; signIn?: BrowserSignIn; page?: BrowserPage; accessControl?: ReactNode }) {
   const { state } = useStore();
   const [fallback, setFallback] = useState(false);
   const stream = state.config?.browserEngine?.engine === "chrome" && !fallback;
@@ -348,6 +348,7 @@ export function LiveBrowser({ bot, signIn, page }: { bot: Bot; signIn?: BrowserS
       ) : null}
     </div>
     <footer ref={browserTools} role="toolbar" aria-label={t("browser.panel.pageLabel", { name: bot.name })} className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-hairline/40 px-3 py-2">
+      {accessControl}
       <BrowserControlPill botName={bot.name} connected={connected} control={control} takeStatus={takeStatus}
         hint={t(kept || signInOpen ? "browser.control.keptHint" : "browser.control.yoursHint", { name: bot.name })} onTake={takeControl} onHandBack={handBack} />
       {stream ? <BrowserElementPicker scopeKey={`${bot.id}:${scopedThread ?? ""}`} read={() => ({ scopeKey: `${bot.id}:${scopedThread ?? ""}`, connected, control: controlRef.current, surface: () => surface.current?.canvas() ?? null, send: message => clientRef.current?.send(message), take: () => browserControl.current?.takeControl() })} /> : undefined}
@@ -370,7 +371,7 @@ export function LiveBrowser({ bot, signIn, page }: { bot: Bot; signIn?: BrowserS
   </div>;
 }
 
-export function BrowserPanel({ bot, signIn, page }: { bot: Bot; signIn?: BrowserSignIn; page?: BrowserPage }) {
+export function BrowserPanel({ bot, signIn, page, accessControl }: { bot: Bot; signIn?: BrowserSignIn; page?: BrowserPage; accessControl?: ReactNode }) {
   const { state } = useStore();
   const engine = state.config?.browserEngine;
   const [requested, setRequested] = useState(false);
@@ -385,11 +386,12 @@ export function BrowserPanel({ bot, signIn, page }: { bot: Bot; signIn?: Browser
     finally { setRequested(false); }
   };
   if (bot.browser === false) return <div className="p-5 text-[13px] text-ink-secondary">{t("browser.panel.enableBot")}</div>;
-  if (engine?.kind === "engine" && !installing && !engine.installError) return <LiveBrowser key={bot.id} bot={bot} signIn={signIn} page={page} />;
+  if (engine?.kind === "engine" && !installing && !engine.installError) return <LiveBrowser key={bot.id} bot={bot} signIn={signIn} page={page} accessControl={accessControl} />;
   return <div className="flex min-h-0 flex-1 flex-col items-start justify-center gap-3 rounded-xl bg-card p-5">
     <div className="text-[15px] font-medium text-ink">{engine?.kind === "engine" ? t("browser.panel.installIncomplete") : t("browser.panel.engineNotInstalled")}</div>
     <p className="text-[13px] leading-relaxed text-ink-secondary">{engine?.kind === "engine" ? t("browser.panel.installIncompleteHelp") : engine?.installable && admin !== false ? t("browser.panel.engineNotInstalledHelp", { name: bot.name }) : browserUnavailableReason(state.config)}</p>
     {engine?.installable || engine?.kind === "engine" ? <button type="button" onClick={() => void install()} disabled={installing || admin !== true} className="rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-ink disabled:opacity-60">{installing ? t("browser.panel.installing") : engine?.kind === "engine" ? t("browser.panel.retryInstall") : t("browser.panel.installEngine")}</button> : null}
+    {accessControl}
     {(engine?.installError || error) && <p role="alert" className="text-[12px] text-danger">{error ?? engine?.installError}</p>}
   </div>;
 }
