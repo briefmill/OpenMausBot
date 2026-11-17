@@ -1,3 +1,5 @@
+import {BrowserEgress} from '../browser/egress/registry.ts';
+import {gateChromeSettings} from '../browser/egress/gate.ts';
 import {ChatMcpClient} from '../drivers/chat-mcp-tools.ts';
 import {lstatSync,realpathSync} from 'node:fs';
 import {isAbsolute,join,resolve} from 'node:path';
@@ -19,6 +21,8 @@ export function createWorkerBrowserExecutor({worker,assignment,uid=1000,cwd,bina
   const workspace=lstatSync(cwd);
   if(!workspace.isDirectory() || workspace.isSymbolicLink() || workspace.uid!==uid || realpathSync(cwd)!==resolve(cwd))throw Error('Assigned browser workspace required');
   const session='worker-'+createHash('sha256').update(worker).digest('hex').slice(0,24);
+  const egress=new BrowserEgress();
+  egress.configure({host:'server',config:()=>({})});
   let active,client,catalog,poisoned=false,busy=false;
   return{
     uncertain:()=>poisoned,
@@ -37,9 +41,11 @@ export function createWorkerBrowserExecutor({worker,assignment,uid=1000,cwd,bina
       busy=true;
       try{
         if(!client){
+          const network=gateChromeSettings(await egress.open(session),'linux');
           active=structuredClone(lease);
           client=new ChatMcpClient({command:'/usr/bin/setpriv',args:[`--reuid=${uid}`,`--regid=${uid}`,'--clear-groups','--bounding-set=-all','--inh-caps=-all','--ambient-caps=-all','--no-new-privs','--',binaryPath,'mcp','--tools','core','--no-webmcp'],
             env:{PATH:'/usr/local/bin:/usr/bin:/bin',HOME:cwd,AGENT_BROWSER_EXECUTABLE_PATH:chromePath,AGENT_BROWSER_SESSION:session,
+              AGENT_BROWSER_PROXY:network.proxy,AGENT_BROWSER_PROXY_BYPASS:network.bypass,AGENT_BROWSER_ARGS:network.args.join('\n'),
               AGENT_BROWSER_PROFILE:join(cwd,'browser-profile'),AGENT_BROWSER_HEADLESS:'1',AGENT_BROWSER_HEADED:'0'}},true,false,{},stopProcesses ? async()=>{await stopProcesses(structuredClone(active));return true;} : undefined);
         }
         if(operation.method==='initialize'){
@@ -48,14 +54,16 @@ export function createWorkerBrowserExecutor({worker,assignment,uid=1000,cwd,bina
           return{protocolVersion:'2024-11-05',capabilities:{tools:{}},serverInfo:{name:'worker-browser',version:'1'}};
         }
         if(operation.method==='tools/list')return{tools:structuredClone(catalog)};
-        return await client.call('tools/call',operation.params,signal,15000);
+        const result=await client.call('tools/call',operation.params,signal,15000);
+        const notice=egress.takeNotice(session);
+        return notice ? {...result,content:[...(Array.isArray(result?.content)?result.content:[]),{type:'text',text:notice}]} : result;
       }catch(error){poisoned=true;throw error;}finally{busy=false;}
     },
     async close(identity){
       if(active && !same(active,identity))throw Error('Foreign browser shutdown');
       if(client){
         try{if(!poisoned && catalog?.some(tool=>tool.name==='agent_browser_close'))await client.call('tools/call',{name:'agent_browser_close',arguments:{}},AbortSignal.timeout(5000),5000);}
-        finally{await client.close();client=null;catalog=null;active=null;}
+        finally{try{await client.close();}finally{await egress.close();client=null;catalog=null;active=null;}}
       }
     },
   };
