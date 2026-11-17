@@ -57,3 +57,9 @@ The first full-loop run reproduced Changed turn context requires reconciliation 
 ## Parallel specialists and return reporting
 
 The packaged fan-out fixture uses three actual Linux services: chief A calls coordinate_bots once with specialists B and C; both specialists finish, then A resumes with both report markers. The controller ledger contains exactly four jobs and one delegation invocation. Specialist B ran from 1794875176505 to 1794875177720; C ran from 1794875176513 to 1794875177725, giving 1,207 ms overlap. The fixture inserts 1.2 second synthetic pauses, uses no paid models or real accounts, and removes its resources. Evidence: service-app-qualification/delegation-fanout-packaged-proof.json. This qualifies parallel delegated routing and report aggregation through the packaged app, not 34-worker capacity or real model behavior.
+
+## Conversation replay versus native resume
+
+The isolated adapter deliberately advertises strictResume=false and hasSession=false. Its service rejects native resume cursors, and its event projection omits native session identifiers. The controller builds the saved conversation into the next turn text. This is a supported stateless conversation strategy, not evidence that history is lost.
+
+The packaged transcript-replay fixture now asserts the resumed chief receives the original request, its earlier response and the specialist report; a private marker seeded in the specialist's unrelated main chat stays absent. It completes exactly three worker jobs and one delegation. Evidence: service-app-qualification/transcript-replay-packaged-proof.json. Providers are synthetic; native CLI resume, live model recall quality and token-cost efficiency remain unverified. Native session reuse would require durable bot/chat/worker binding and additional isolation tests before enabling it.
