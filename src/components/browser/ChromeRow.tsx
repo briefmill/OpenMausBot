@@ -1,7 +1,7 @@
 // The tab strip and address bar above a bot's browser. The address bar follows pingdotgg/t3code@00cdceb1
 // apps/web/src/components/preview/PreviewChromeRow.tsx, MIT License, Copyright (c) 2026 T3 Tools Inc. (full text in
 // third_party/t3-code/LICENSE); modified: OpenMausBot's tabs, control pill and profile button.
-import { AppWindow, ArrowLeft, ArrowRight, Globe, Hand, Loader2, Maximize, Minimize, Plus, RotateCw, Shrink, UserRound, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Globe, Hand, Loader2, Maximize, Minimize, Plus, RotateCw, UserRound, X } from "lucide-react";
 import { forwardRef, useState, type ReactNode } from "react";
 
 import type { PreviewStreamControl } from "@/lib/browser-stream-client";
@@ -89,7 +89,6 @@ export const ChromeRow = forwardRef<HTMLInputElement, {
   /** Toolbar commands are open while connected and the browser is not held on another device. */
   commandsReady: boolean;
   profileName: string;
-  fullscreen: boolean;
   /** Maximized: the panel overlays the whole window, instead of its usual share of it. */
   maximized: boolean;
   menu: ReactNode;
@@ -97,7 +96,6 @@ export const ChromeRow = forwardRef<HTMLInputElement, {
   onAddress: (text: string) => void;
   onTake: () => void;
   onHandBack: () => void;
-  onFullscreen: () => void;
   onMaximize: () => void;
   onProfiles: () => void;
 }>(function ChromeRow(props, addressRef) {
@@ -119,8 +117,7 @@ export const ChromeRow = forwardRef<HTMLInputElement, {
           <button className={`${button} shrink-0`} disabled={!commandsReady} aria-label={t("browser.panel.newTab")} title={t("browser.panel.newTab")} onClick={() => props.onCommand({ type: "tabNew" })}><Plus size={16} /></button>
         </div>
         {!props.controlsInFooter && <><BrowserControlPill botName={botName} connected={connected} control={control} takeStatus={takeStatus} hint={props.hint} onTake={props.onTake} onHandBack={props.onHandBack} />{props.picker}</>}
-        <button className={button} title={t(props.maximized ? "browser.panel.restore" : "browser.panel.maximizeHint")} aria-label={t(props.maximized ? "browser.panel.restore" : "browser.panel.maximize")} onClick={props.onMaximize}>{props.maximized ? <Shrink size={15} /> : <AppWindow size={15} />}</button>
-        <button className={button} title={t(props.fullscreen ? "browser.panel.exitFullscreen" : "browser.panel.fullscreenHint")} aria-label={t(props.fullscreen ? "browser.panel.exitFullscreen" : "browser.panel.fullscreen")} onClick={props.onFullscreen}>{props.fullscreen ? <Minimize size={15} /> : <Maximize size={15} />}</button>
+        <button className={button} title={t(props.maximized ? "browser.panel.restore" : "browser.panel.maximizeHint")} aria-label={t(props.maximized ? "browser.panel.restore" : "browser.panel.maximize")} onClick={props.onMaximize}>{props.maximized ? <Minimize size={15} /> : <Maximize size={15} />}</button>
         <button className={`${button} rounded-xl bg-inset p-1.5`} title={t("browser.panel.profileTitle", { name: props.profileName })} aria-label={t("browser.panel.profiles")} onClick={props.onProfiles}><UserRound size={15} /></button>
       </div>
       <form

@@ -15,7 +15,15 @@ export function useWidescreenBrowser(panel: RefObject<HTMLDivElement | null>, pa
     const measure = () => {
       const chrome = viewport.getBoundingClientRect().top - card.getBoundingClientRect().top
         + (Number.parseFloat(getComputedStyle(card).borderBottomWidth) || 0);
-      const next = fitBrowserPage(card.clientWidth, parent.clientHeight - chrome - (footer?.current?.getBoundingClientRect().height ?? 0));
+      const parentStyle = getComputedStyle(parent);
+      const siblings = Array.from(parent.children).filter((child): child is HTMLElement => child instanceof HTMLElement && child !== card);
+      const occupied = siblings.reduce((height, child) => {
+        const style = getComputedStyle(child);
+        if (style.position === "absolute" || style.position === "fixed") return height;
+        return height + child.getBoundingClientRect().height + (Number.parseFloat(style.marginTop) || 0) + (Number.parseFloat(style.marginBottom) || 0);
+      }, 0);
+      const padding = (Number.parseFloat(parentStyle.paddingTop) || 0) + (Number.parseFloat(parentStyle.paddingBottom) || 0);
+      const next = fitBrowserPage(card.clientWidth, parent.clientHeight - padding - occupied - chrome - (footer?.current?.getBoundingClientRect().height ?? 0));
       setSize(previous => previous?.width === next?.width && previous?.height === next?.height ? previous : next);
     };
     measure();
@@ -23,6 +31,7 @@ export function useWidescreenBrowser(panel: RefObject<HTMLDivElement | null>, pa
     const observer = new ResizeObserver(measure);
     if (footer?.current) observer.observe(footer.current);
     observer.observe(parent); observer.observe(card); observer.observe(viewport);
+    for (const sibling of parent.children) if (sibling !== card) observer.observe(sibling);
     return () => observer.disconnect();
   }, [panel, page, fullscreen, footer]);
   return size;

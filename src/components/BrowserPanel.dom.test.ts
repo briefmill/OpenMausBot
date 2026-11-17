@@ -81,13 +81,10 @@ describe("the browser panel's Maximize", () => {
     expect(dialogCloses).not.toHaveBeenCalled();
   });
 
-  it("does not look like Full screen: each has its own icon and says what it fills", () => {
-    const fullscreen = host.querySelector<HTMLButtonElement>('[aria-label="Full screen"]')!;
-    const icon = (button: HTMLButtonElement | null) => button?.querySelector("svg")?.getAttribute("class");
-    expect(icon(maximizeButton())).toBe("lucide lucide-app-window");
-    expect(icon(fullscreen)).toBe("lucide lucide-maximize");
+  it("uses the expand icon for the app window and offers no whole-display action", () => {
+    expect(maximizeButton()?.querySelector("svg")?.getAttribute("class")).toBe("lucide lucide-maximize");
     expect(maximizeButton()?.title).toBe("Maximize (fill the app window)");
-    expect(fullscreen.title).toBe("Full screen (whole display)");
+    expect(host.querySelector('[aria-label="Full screen"]')).toBeNull();
   });
 
   it("leaves Escape to the app while the panel is its usual size", () => {
@@ -112,33 +109,13 @@ describe("the browser panel's Maximize", () => {
   });
 });
 
-describe("the browser panel's Full screen", () => {
-  it("toggles full screen and exits cleanly", async () => {
-    const fullscreenButton = () => host.querySelector<HTMLButtonElement>('[aria-label="Full screen"], [aria-label="Exit full screen"]');
-    expect(fullscreenButton()?.getAttribute("aria-label")).toBe("Full screen");
-
-    const p = panel();
-    p.requestFullscreen = vi.fn().mockImplementation(() => {
-      Object.defineProperty(document, "fullscreenElement", { value: p, configurable: true, writable: true });
-      document.dispatchEvent(new Event("fullscreenchange"));
-      return Promise.resolve();
-    });
-    document.exitFullscreen = vi.fn().mockImplementation(() => {
-      Object.defineProperty(document, "fullscreenElement", { value: null, configurable: true, writable: true });
-      document.dispatchEvent(new Event("fullscreenchange"));
-      return Promise.resolve();
-    });
-
-    click(fullscreenButton());
-    await settle();
-    expect(fullscreenButton()?.getAttribute("aria-label")).toBe("Exit full screen");
-
-    click(fullscreenButton());
-    await settle();
-    expect(fullscreenButton()?.getAttribute("aria-label")).toBe("Full screen");
-  });
+it("keeps native fullscreen untouched when expanding the app view", () => {
+  const request = vi.fn();panel().requestFullscreen = request;
+  const exit = vi.fn();document.exitFullscreen = exit;
+  click(maximizeButton());expect(skyward()).toBe(true);
+  click(maximizeButton());expect(skyward()).toBe(false);
+  expect(request).not.toHaveBeenCalled();expect(exit).not.toHaveBeenCalled();
 });
-
 
 it("places browser control below the page in its bottom toolbar", () => {
   const toolbar = panel().querySelector('footer[role="toolbar"]');

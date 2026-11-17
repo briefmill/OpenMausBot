@@ -7,30 +7,25 @@ import { ChromeRow } from "./ChromeRow";
 
 const props: ComponentProps<typeof ChromeRow> = {
   botName: "Scout", tabs: [], nav: { url: "about:blank", loading: false, canGoBack: false, canGoForward: false },
-  connected: false, control: null, takeStatus: "", commandsReady: false, profileName: "Work", fullscreen: false, maximized: false, menu: null,
-  onCommand: vi.fn(), onAddress: vi.fn(), onTake: vi.fn(), onHandBack: vi.fn(), onFullscreen: vi.fn(), onMaximize: vi.fn(), onProfiles: vi.fn(),
+  connected: false, control: null, takeStatus: "", commandsReady: false, profileName: "Work", maximized: false, menu: null,
+  onCommand: vi.fn(), onAddress: vi.fn(), onTake: vi.fn(), onHandBack: vi.fn(), onMaximize: vi.fn(), onProfiles: vi.fn(),
 };
 
 afterEach(() => setLocale("en"));
 
 describe("browser window controls", () => {
   it.each([
-    ["en", "Maximize (fill the app window)", "Full screen (whole display)", "Maximize", "Full screen"],
-    ["pt-br", "Maximizar (ocupar a janela do app)", "Usar tela cheia (ocupar o monitor inteiro)", "Maximizar", "Tela cheia"],
-  ])("distinguishes the app window from the whole display in %s", (locale, maximizeHint, fullscreenHint, maximize, fullscreen) => {
+    ["en", "Maximize (fill the app window)", "Maximize"],
+    ["pt-br", "Maximizar (ocupar a janela do app)", "Maximizar"],
+  ])("expands within the app window in %s", (locale, hint, label) => {
     setLocale(locale);
     const html = renderToStaticMarkup(createElement(ChromeRow, props));
-    expect(html).toContain(`title="${maximizeHint}" aria-label="${maximize}"`);
-    expect(html).toContain(`title="${fullscreenHint}" aria-label="${fullscreen}"`);
+    expect(html).toContain(`title="${hint}" aria-label="${label}"`);
+    expect(html).not.toContain("whole display");
   });
-
-  it.each([
-    ["en", "Restore size", "Exit full screen"],
-    ["pt-br", "Restaurar tamanho", "Sair da tela cheia"],
-  ])("keeps restore and exit labels in %s", (locale, restore, exit) => {
+  it.each([["en", "Restore size"], ["pt-br", "Restaurar tamanho"]])("labels restore in %s", (locale, restore) => {
     setLocale(locale);
-    const html = renderToStaticMarkup(createElement(ChromeRow, { ...props, maximized: true, fullscreen: true }));
+    const html = renderToStaticMarkup(createElement(ChromeRow, { ...props, maximized: true }));
     expect(html).toContain(`title="${restore}" aria-label="${restore}"`);
-    expect(html).toContain(`title="${exit}" aria-label="${exit}"`);
   });
 });

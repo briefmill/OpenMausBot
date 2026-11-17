@@ -62,7 +62,6 @@ export function LiveBrowser({ bot, signIn, page }: { bot: Bot; signIn?: BrowserS
   const [showProfiles, setShowProfiles] = useState(false);
   const [showTyping, setShowTyping] = useState(false);
   const [masked, setMasked] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [passkeyDismissed, setPasskeyDismissed] = useState("");
   const floating = useBrowserPictureInPicture();
@@ -228,26 +227,7 @@ export function LiveBrowser({ bot, signIn, page }: { bot: Bot; signIn?: BrowserS
     interact({ type: "tabNew", url: page.url });
   }, [page, connected, asleep, interact]);
 
-  // On macOS a full-screen element takes the window into native full screen, where minimize is disabled.
-  useEffect(() => {
-    const update = () => setFullscreen(Boolean(panel.current) && document.fullscreenElement === panel.current);
-    document.addEventListener("fullscreenchange", update);
-    return () => document.removeEventListener("fullscreenchange", update);
-  }, []);
-  const toggleFullscreen = () => {
-    const leaving = Boolean(panel.current) && document.fullscreenElement === panel.current;
-    if (leaving && maximized) {
-      setMaximized(false);
-    }
-    const request = leaving ? document.exitFullscreen() : panel.current?.requestFullscreen();
-    void request?.catch(() => setError(t(leaving ? "browser.panel.exitFullscreenFailed" : "browser.panel.fullscreenUnavailable")));
-  };
-  const toggleMaximize = () => {
-    if (fullscreen && document.fullscreenElement === panel.current) {
-      void document.exitFullscreen().catch(() => {});
-    }
-    setMaximized((value) => !value);
-  };
+  const toggleMaximize = () => setMaximized(value => !value);
   // The maximized panel swallows its Escape (defaultPrevented) so the same press cannot close a dialog beneath.
   // Capture: listeners registered before this panel must see the key already refused.
   useEffect(() => {
@@ -255,14 +235,11 @@ export function LiveBrowser({ bot, signIn, page }: { bot: Bot; signIn?: BrowserS
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
       event.preventDefault();
-      if (fullscreen && document.fullscreenElement === panel.current) {
-        void document.exitFullscreen().catch(() => {});
-      }
       setMaximized(false);
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [maximized, fullscreen]);
+  }, [maximized]);
 
   const restart = () => {
     if (!window.confirm(t("browser.panel.confirmRestart"))) return;
@@ -292,7 +269,7 @@ export function LiveBrowser({ bot, signIn, page }: { bot: Bot; signIn?: BrowserS
   const typingReady = connected && you;
   const pipSupported = stream && supportsBrowserPictureInPicture();
   const passkeyWall = passkeyWallAt(nav.url);
-  return <div ref={panel} style={pageSize ? { flex: "0 1 auto" } : undefined} className={maximized
+  return <div ref={panel} style={pageSize ? { flex: "0 1 auto", marginBlock: "auto" } : undefined} className={maximized
     ? "fixed inset-0 z-50 flex flex-col overflow-hidden bg-card text-ink"
     : "flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-hairline/40 bg-card text-ink"} data-browser-transport={stream ? "stream" : "live"}>
     <ChromeRow
@@ -307,7 +284,6 @@ export function LiveBrowser({ bot, signIn, page }: { bot: Bot; signIn?: BrowserS
       hint={t(kept || signInOpen ? "browser.control.keptHint" : "browser.control.yoursHint", { name: bot.name })}
       commandsReady={commandsReady}
       profileName={profileName}
-      fullscreen={fullscreen}
       maximized={maximized}
       onCommand={interact}
       onAddress={(text) => {
@@ -317,7 +293,6 @@ export function LiveBrowser({ bot, signIn, page }: { bot: Bot; signIn?: BrowserS
       }}
       onTake={takeControl}
       onHandBack={handBack}
-      onFullscreen={toggleFullscreen}
       onMaximize={toggleMaximize}
       onProfiles={() => { browserControl.current?.handBack(); setShowProfiles(true); }}
       menu={<>{stream ? <ExtensionsMenu
