@@ -34,3 +34,40 @@ test('service controller refuses missing or reused service bindings',()=>{
   assert.throws(()=>createServiceWorkerCoordinator({...base,clients:{}}),/Pinned/);
   assert.throws(()=>createServiceWorkerCoordinator({...base,assignments:[assignments[0],assignments[0]],clients:{}}),/Independent/);
 });
+
+
+test('explicit browser workers use their pinned service through lazy approved tools',async()=>{
+  const {openAccountScopedWorkerTools}=await import('./mounted-controller-tools.mjs');
+  let c,adapter,running=false,stopped=false;const browserCalls=[];
+  const client={
+    async browser(args){assert.equal(running,true);assert.equal(args.lease.worker,'a');browserCalls.push(args);
+      if(args.operation.method==='tools/list')return{tools:[{name:'agent_browser_click',description:'Synthetic click',inputSchema:{type:'object',properties:{ref:{type:'string'}},required:['ref'],additionalProperties:false}}]};
+      return{content:[{type:'text',text:'clicked'}]};},
+    async execute({job,lease,signal}){
+      assert.equal(browserCalls.length,0);running=true;
+      c.ledger.append(lease,1,{type:'worker.execution.claimed',jobId:job.id,generation:lease.generation});
+      assert.equal((await c.tools.list({lease}))[0].function.name,'browser_agent_browser_click');
+      const call={lease,signal,call:{id:'click',tool:'browser_agent_browser_click',arguments:{ref:'e1'}}};
+      assert.equal((await c.tools.execute(call)).result.ok,true);assert.equal((await c.tools.execute(call)).replay,true);
+      c.ledger.append(lease,2,{type:'turn.completed',eventId:'done',threadId:job.thread,turnId:'native-a',ok:true});
+      return{lease,result:{turnId:'native-a',ok:true,cancelled:false,events:1,stopReason:null}};
+    },async stop(){stopped=true;},async inspectStopped(){return stopped;},
+  };
+  c=createServiceWorkerCoordinator({file:':memory:',assignments:[assignments[0]],pools,clients:{a:client},browserWorkers:['a'],openTools:openAccountScopedWorkerTools,
+    admit:async()=>{},health:async()=>true,signal:AbortSignal.timeout(5000),resolveTurn:(bot,thread)=>({bot,thread,requestId:'browser',active:true})});
+  try{
+    // Later mutation of the caller's registry cannot replace a pinned browser client.
+    client.browser=async()=>{throw Error('Mutated client must not execute');};
+    adapter=await c.bootstrap.createAdapter({instanceId:'services',pool:'pool'});
+    adapter.onEvent(event=>{if(event.type==='request.opened'){assert.equal(browserCalls.length,2);void adapter.respondToRequest(event.threadId,event.requestId,{behavior:'allow'});}});
+    await adapter.sendTurn({botId:'bot-a',threadId:'thread-a',text:'Synthetic',approvalMode:'ask',mcpFromUserConfig:false,
+      integrations:{browser:{command:'must-not-launch-controller-browser',args:[],env:{}}}});
+    const result=await c.drain();assert.equal(result[0].value.outcome,'completed');assert.equal(browserCalls.length,3);
+  }finally{c.close();}
+});
+test('browser opt-in refuses unknown workers or missing service capabilities',()=>{
+  const base={file:':memory:',assignments:[assignments[0]],pools,admit:async()=>{},health:async()=>true,signal:AbortSignal.timeout(1000),resolveTurn:()=>{},openTools:()=>{}};
+  const client={execute(){},stop(){},inspectStopped(){}};
+  assert.throws(()=>createServiceWorkerCoordinator({...base,clients:{a:client},browserWorkers:['foreign']}),/browser worker assignments/);
+  assert.throws(()=>createServiceWorkerCoordinator({...base,clients:{a:client},browserWorkers:['a']}),/browser service/);
+});
