@@ -7,8 +7,8 @@ const same=(a,b)=>a?.id===b?.id && a?.generation===b?.generation && a?.worker===
 
 // Operator-owned runtime only. Call through the controller's durable approval
 // journal; this backend does not grant permission or certify process shutdown.
-export function createWorkerBrowserExecutor({worker,assignment,uid=1000,cwd,binaryPath,chromePath}) {
-  if(process.platform!=='linux' || process.getuid?.()!==0 || !Number.isSafeInteger(uid) || uid<1000 ||
+export function createWorkerBrowserExecutor({worker,assignment,uid=1000,cwd,binaryPath,chromePath,stopProcesses}) {
+  if((stopProcesses!==undefined && typeof stopProcesses!=='function') || process.platform!=='linux' || process.getuid?.()!==0 || !Number.isSafeInteger(uid) || uid<1000 ||
      ![cwd,binaryPath,chromePath].every(path=>typeof path==='string' && isAbsolute(path)) ||
      !/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/.test(worker??''))throw Error('Trusted Linux browser runtime required');
   const policy=normalizeWorkerAssignment(assignment);
@@ -40,7 +40,7 @@ export function createWorkerBrowserExecutor({worker,assignment,uid=1000,cwd,bina
           active=structuredClone(lease);
           client=new ChatMcpClient({command:'/usr/bin/setpriv',args:[`--reuid=${uid}`,`--regid=${uid}`,'--clear-groups','--bounding-set=-all','--inh-caps=-all','--ambient-caps=-all','--no-new-privs','--',binaryPath,'mcp','--tools','core','--no-webmcp'],
             env:{PATH:'/usr/local/bin:/usr/bin:/bin',HOME:cwd,AGENT_BROWSER_EXECUTABLE_PATH:chromePath,AGENT_BROWSER_SESSION:session,
-              AGENT_BROWSER_PROFILE:join(cwd,'browser-profile'),AGENT_BROWSER_HEADLESS:'1',AGENT_BROWSER_HEADED:'0'}},true,false,{});
+              AGENT_BROWSER_PROFILE:join(cwd,'browser-profile'),AGENT_BROWSER_HEADLESS:'1',AGENT_BROWSER_HEADED:'0'}},true,false,{},stopProcesses ? async()=>{await stopProcesses(structuredClone(active));return true;} : undefined);
         }
         if(operation.method==='initialize'){
           if(catalog)throw Error('Browser already initialized');

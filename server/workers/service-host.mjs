@@ -16,8 +16,8 @@ export async function createSupervisedExecutionService({file,worker,assignment,v
   catch(error){if(error.code!=='ENOENT')throw error;}
   const policy=normalizeWorkerAssignment(assignment);
   if(browserConfig!==undefined && (!browserConfig || Object.keys(browserConfig).sort().join(',')!=='binaryPath,chromePath'))throw Error('Trusted browser configuration required');
-  const browser=browserConfig ? (await import('./browser-executor.mjs')).createWorkerBrowserExecutor({worker,assignment,uid,cwd,...browserConfig}) : undefined;
   const supervisor=createLinuxServiceSupervisor({worker,uid,isolatedPidNamespace});
+  const browser=browserConfig ? (await import('./browser-executor.mjs')).createWorkerBrowserExecutor({worker,assignment,uid,cwd,...browserConfig,stopProcesses:identity=>supervisor.stop(identity)}) : undefined;
   const client=createWorkerProcessClient({bootstrapFile,cwd,environment,deadlineMs,command:supervisor.command,onProcess:()=>{}});
   const journal=createServiceExecution({file,worker,
     execute:async({identity,task,signal})=>{

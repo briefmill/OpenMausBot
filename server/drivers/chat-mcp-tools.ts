@@ -126,10 +126,12 @@ export class ChatMcpClient {
   private failure?: string;
   private stderrTail = "";
   private readonly configured: string[];
+  private readonly stopProcess?: (child: ReturnType<typeof spawnCli>) => Promise<boolean>;
   private pending = new Map<number, { method: string; resolve(value: unknown): void; reject(error: Error): void }>();
 
   /** `configured`: a server the person set up, whose own environment passes the bot box as theirs. */
-  constructor(server: Server, computerUse = false, configured = false, sourceEnvironment: NodeJS.ProcessEnv = process.env) {
+  constructor(server: Server, computerUse = false, configured = false, sourceEnvironment: NodeJS.ProcessEnv = process.env, stopProcess?: (child: ReturnType<typeof spawnCli>) => Promise<boolean>) {
+    this.stopProcess = stopProcess;
     this.frameBytes = computerUse ? 32 * 1024 * 1024 : FRAME_BYTES;
     this.configured = Object.values(server.env).filter((value) => value.length >= 6);
     try {
@@ -180,7 +182,7 @@ export class ChatMcpClient {
     this.buffer = "";
     // Windows reaps the tree via taskkill /T, which can exceed shorter budgets on a loaded machine;
     // elsewhere the budget is the TERM grace before KILL, not a verdict race, so it stays short.
-    this.closing = killCliTree(this.child, process.platform === "win32" ? 15_000 : 5_000).then((stopped) => {
+    this.closing = (this.stopProcess ? this.stopProcess(this.child) : killCliTree(this.child, process.platform === "win32" ? 15_000 : 5_000)).then((stopped) => {
       if (stopped) return;
       if (!inFlight) {
         console.warn("chat-mcp: shutdown could not be confirmed within its budget; no call was in flight, so the turn outcome is unaffected");

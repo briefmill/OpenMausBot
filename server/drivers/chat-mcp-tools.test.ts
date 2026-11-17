@@ -240,6 +240,21 @@ describe("Chat MCP session", () => {
     } finally { warn.mockRestore(); }
   });
 
+  it("uses a trusted supervisor shutdown callback once when supplied", async () => {
+    const f = fixture();
+    let stops = 0;
+    const client = new ChatMcpClient(f.server, false, false, {}, async (child) => {
+      stops++;
+      const exited = new Promise<boolean>((resolve) => child.once("exit", () => resolve(true)));
+      child.kill();
+      return exited;
+    });
+    await client.tools(AbortSignal.timeout(5000));
+    await client.close();
+    await client.close();
+    expect(stops).toBe(1);
+  });
+
   it("starts servers with the widened PATH rather than the bare one the desktop shell inherits", async () => {
     // Launched from Finder, the harness sees only the system directories.
     const widened = augmentedPath();
