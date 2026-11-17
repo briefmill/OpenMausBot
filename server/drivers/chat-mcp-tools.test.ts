@@ -1519,3 +1519,75 @@ it("keeps healthy selected tools usable when another selected tool disappears", 
   expect(ready.read().calls.at(-1)).toMatchObject({ method: "tools/call", params: { name: "write" } });
   expect(retired.read().calls.filter(call => call.method === "tools/call")).toEqual([]);
 });
+
+
+describe("controller-owned browser transport", () => {
+  it("retains browser schemas, tool scopes and approval views without launching the controller browser", async () => {
+    const calls: unknown[] = [];
+    let closed = 0;
+    const signal = AbortSignal.timeout(5000);
+    const transport = {
+      async tools(_signal: AbortSignal, include: (tool: unknown) => boolean = () => true) {
+        return [{ name: "agent_browser_click", description: "Click", inputSchema: schema },
+          { name: "agent_browser_open", description: "Open", inputSchema: schema }].filter(include);
+      },
+      async call(method: string, params: unknown) { calls.push({ method, params }); return { content: [{ type: "text", text: "worker result" }] }; },
+      async close() { closed++; },
+    };
+    const before = spawned.length;
+    const tools = await mountChatTools({ browser: { command: "must-not-launch-controller-browser", args: [], env: {} } },
+      signal, true, { allow: ["mcp:browser:agent_browser_click"] }, undefined, undefined, undefined, undefined, undefined, true, transport);
+    sessions.push(tools);
+    expect(spawned.length).toBe(before);
+    expect(tools.definitions.map(tool => tool.function.name)).toEqual(["browser_agent_browser_click"]);
+    expect(tools.view("browser_agent_browser_click", { value: "e1" }).ask).toBe(true);
+    expect(() => tools.validate("browser_agent_browser_click", { value: 3 })).toThrow();
+    expect(() => tools.validate("browser_agent_browser_open", { value: "url" })).toThrow();
+    expect((await tools.execute("browser_agent_browser_click", { value: "e1" }, signal)).text).toContain("worker result");
+    expect(calls).toEqual([{ method: "tools/call", params: { name: "agent_browser_click", arguments: { value: "e1" } } }]);
+    await tools.close(); await tools.close(); expect(closed).toBe(1);
+  });
+
+  it("rejects a replacement when built-in browser mounting is disabled", async () => {
+    const transport = { async tools() { return []; }, async call() { return {}; }, async close() {} };
+    await expect(mountChatTools(undefined, AbortSignal.timeout(5000), false, undefined, undefined,
+      undefined, undefined, undefined, undefined, true, transport)).rejects.toThrow("trusted built-in browser");
+  });
+});
+
+
+it("holds a worker browser call behind the existing controller approval session", async () => {
+  // @ts-expect-error The worker policy module uses JavaScript and has no declaration file.
+  const { createControllerToolSession } = await import("../workers/controller-tool-session.mjs");
+  const signal = AbortSignal.timeout(5000);
+  let calls = 0;
+  const transport = {
+    async tools() { return [{ name: "agent_browser_click", description: "Click", inputSchema: schema }]; },
+    async call() { calls++; return { content: [{ type: "text", text: "worker click" }] }; },
+    async close() {},
+  };
+  const mounted = await mountChatTools({ browser: { command: "must-not-launch-controller-browser", args: [], env: {} } },
+    signal, true, undefined, undefined, undefined, undefined, undefined, undefined, true, transport);
+  sessions.push(mounted);
+  const job = { id: "job", bot: "bot", thread: "thread", project: "project", generation: 1 };
+  const events: Array<Record<string, unknown>> = [];
+  const session = createControllerToolSession({ job, turnId: "turn", session: mounted, signal,
+    isCurrent: () => true, emit: (event: Record<string, unknown>) => events.push(event), mode: () => "ask", preview: () => "synthetic click" });
+  const call = { id: "click-one", tool: "browser_agent_browser_click", arguments: { value: "e1" } };
+  try {
+    const pending = session.authorize({ job, call, signal });
+    expect(calls).toBe(0);
+    const request = String(events.find(event => event.type === "request.opened")?.requestId);
+    expect(request).not.toBe("undefined");
+    expect(session.respondToRequest("foreign-thread", request, { behavior: "allow" })).toBe("unavailable");
+    expect(calls).toBe(0);
+    expect(session.respondToRequest("thread", request, { behavior: "allow" })).toBe("allowed-once");
+    expect(await pending).toBe(true);
+    await session.dispatch({ job, call, signal }); expect(calls).toBe(1);
+    await expect(session.dispatch({ job, call, signal })).rejects.toThrow("matching authorization");
+    const denied = session.authorize({ job, call: { ...call, id: "click-two" }, signal });
+    const request2 = String(events.filter(event => event.type === "request.opened").at(-1)?.requestId);
+    expect(session.respondToRequest("thread", request2, { behavior: "deny" })).toBe("rejected");
+    expect(await denied).toBe(false); expect(calls).toBe(1);
+  } finally { await session.close(); }
+});

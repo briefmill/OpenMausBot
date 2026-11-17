@@ -62,7 +62,8 @@ export interface ChatToolSession {
 
 type Server = { command: string; args: string[]; env: Record<string, string> };
 /** `required`: a server the turn must not run without (see `mustHave` in mountChatTools). */
-type RegisteredTool = { client: ChatMcpClient; server: string; launch: string; builtInBrowser: boolean; agents: boolean; hostComputer: boolean; required: boolean; name: string; schema: ValidateFunction; searched: boolean };
+export type ChatMcpTransport = Pick<ChatMcpClient, "tools" | "call" | "close">;
+type RegisteredTool = { client: ChatMcpTransport; server: string; launch: string; builtInBrowser: boolean; agents: boolean; hostComputer: boolean; required: boolean; name: string; schema: ValidateFunction; searched: boolean };
 function chatToolName(server: string, tool: string): string {
   return `${server}_${tool}`.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 64) || "mcp_tool";
 }
@@ -497,7 +498,8 @@ export function directServers(servers: ReadonlyArray<{ name: string; tools: numb
  * A tool result over 50KB is saved whole in `resultFolder`, the bot's working folder, after `scrub` masks secrets (see savedOrBounded).
  * `toolLimit` is the most tools the provider takes in one request, ask_user included; null when it takes any number. */
 export async function mountChatTools(integrations: SendTurnInput["integrations"], signal: AbortSignal, computerUse = false, toolScope?: ToolScope, callTimeoutMs: number = DEFAULT_CALL_MS,
-  schemaProfile?: ToolSchemaProfile, resultFolder?: string, scrub: (text: string) => string = redactSecretsInText, toolLimit: number | null = CHAT_TOOL_LIMIT, strictOutcome = false): Promise<ChatToolSession> {
+  schemaProfile?: ToolSchemaProfile, resultFolder?: string, scrub: (text: string) => string = redactSecretsInText, toolLimit: number | null = CHAT_TOOL_LIMIT, strictOutcome = false, browserTransport?: ChatMcpTransport): Promise<ChatToolSession> {
+  if (browserTransport && (!computerUse || !integrations?.browser)) throw new Error("A trusted built-in browser mount is required for browser transport");
   const parsed = parseToolScope(toolScope);
   if (!parsed.ok) throw new Error(parsed.error);
   const scope = parsed.scope;
@@ -543,12 +545,12 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
   }
   for (const group of firstOf.values()) if (group.same.length) merged.push(group);
   if (servers.length > 32) throw new Error("MCP server count exceeds the 32-server limit");
-  const clients: ChatMcpClient[] = [];
+  const clients: ChatMcpTransport[] = [];
   const skipped: SkippedChatMcpServer[] = [];
   const trimmed: TrimmedChatMcpServer[] = [];
-  const started = new Map<string, ChatMcpClient>();
+  const started = new Map<string, ChatMcpTransport>();
   // By mount index too: a configured server may share a built-in's name, and a failed mount closes only its own client.
-  const startedAt: Array<ChatMcpClient | undefined> = [];
+  const startedAt: Array<ChatMcpTransport | undefined> = [];
   let closed = false;
   let closing: Promise<void> | undefined;
   const close = (): Promise<void> => {
@@ -669,7 +671,8 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
     // Concurrent starts, consumed in config order so names and collision suffixes stay stable.
     const mounts = await Promise.allSettled(servers.map(async ([name, descriptor], index) => {
       if (signal.aborted || closed) throw aborted();
-      const client = new ChatMcpClient(descriptor, computerUse, index >= builtIns);
+      // A controller-owned worker transport replaces only the built-in browser descriptor.
+      const client = descriptor === integrations?.browser && browserTransport ? browserTransport : new ChatMcpClient(descriptor, computerUse, index >= builtIns);
       clients.push(client);
       started.set(name, client);
       startedAt[index] = client;
