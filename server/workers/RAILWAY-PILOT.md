@@ -67,3 +67,11 @@ The packaged transcript-replay fixture now asserts the resumed chief receives th
 ### Local browser resource evidence
 
 The two-container offline browser fixture measured overlapping RPC execution1132ms and distinct PID namespaces/volumes. Per-fixture cgroup peaks were about800MiB/214PIDs and376MiB/220PIDs under1CPU/1GiB/256PID limits, including local fixture controllers and synthetic CLI. CPU throttling occurred. This is evidence to include in pilot admission sizing, not a production requirement estimate or proof of34-worker density. Browser viewer integration and a shared-controller real-service concurrency test remain open. Canonical evidence is service-browser-qualification/parallel-proof.json under the workspace evidence root.
+
+### PID pressure and affinity experiment
+
+The thread inventory shows Chromium accounts for150-168tasks in the first quota-only browser jobs. Root fixture/service Node processes account for18tasks together, worker Node processes18, native agent-browser4 and crash handlers3. The high task count is not evidence of hundreds of running bot jobs or a leaking Rust pool.
+
+Using the same immutable image b7ba23266f5ec661b1d864b8d8251732865e9f3b8311e192f551a28ec15ad3c2, the quota-only run peaks at223/206PIDs. A second short run pins the two fixtures to CPUs0and1 while retaining the1CPU quota: peaks195/196PIDs, browser RPC overlap1098ms and verified clean shutdown. Chromium snapshots show134/137tasks. Cgroup throttled time changes from32.2/23.6seconds to1.45/1.03milliseconds for this fixture; scheduling and host load can affect repeatability. Memory peaks remain about617-650MiB, and this does not establish heavy-site capacity.
+
+The repeated test preserves browser security flags and separate volumes/PID namespaces. It supports evaluating optional CPU affinity on a controlled Docker host. Railway's available affinity controls have not been verified, so do not prescribe a Railway cpuset variable or claim this configuration exists there. Evidence: service-browser-qualification/parallel-proof.json and parallel-affinity-proof.json. Both use separate fixture controllers and synthetic native CLIs, with no paid turns or production changes.
