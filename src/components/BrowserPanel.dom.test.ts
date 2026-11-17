@@ -138,3 +138,14 @@ describe("the browser panel's Full screen", () => {
     expect(fullscreenButton()?.getAttribute("aria-label")).toBe("Full screen");
   });
 });
+
+
+it("places browser control below the page in its bottom toolbar", () => {
+  const toolbar = panel().querySelector('footer[role="toolbar"]');
+  expect(toolbar).not.toBeNull();
+  expect(toolbar?.querySelector('[data-pill]')).not.toBeNull();
+  expect(panel().querySelector('[data-pill]')?.closest('footer')).toBe(toolbar);
+  const page = host.querySelector('[data-stub-surface]');
+  expect(page).not.toBeNull();
+  expect(page!.compareDocumentPosition(toolbar!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+});

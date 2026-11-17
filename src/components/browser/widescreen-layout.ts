@@ -7,7 +7,7 @@ export function fitBrowserPage(width: number, height: number) {
   return { width: Math.floor(fittedWidth), height: Math.floor(fittedWidth / PAGE_RATIO) };
 }
 
-export function useWidescreenBrowser(panel: RefObject<HTMLDivElement | null>, page: RefObject<HTMLDivElement | null>, fullscreen: boolean) {
+export function useWidescreenBrowser(panel: RefObject<HTMLDivElement | null>, page: RefObject<HTMLDivElement | null>, fullscreen: boolean, footer?: RefObject<HTMLElement | null>) {
   const [size, setSize] = useState<ReturnType<typeof fitBrowserPage>>(null);
   useEffect(() => {
     const card = panel.current, viewport = page.current, parent = card?.parentElement;
@@ -15,14 +15,15 @@ export function useWidescreenBrowser(panel: RefObject<HTMLDivElement | null>, pa
     const measure = () => {
       const chrome = viewport.getBoundingClientRect().top - card.getBoundingClientRect().top
         + (Number.parseFloat(getComputedStyle(card).borderBottomWidth) || 0);
-      const next = fitBrowserPage(card.clientWidth, parent.clientHeight - chrome);
+      const next = fitBrowserPage(card.clientWidth, parent.clientHeight - chrome - (footer?.current?.getBoundingClientRect().height ?? 0));
       setSize(previous => previous?.width === next?.width && previous?.height === next?.height ? previous : next);
     };
     measure();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(measure);
+    if (footer?.current) observer.observe(footer.current);
     observer.observe(parent); observer.observe(card); observer.observe(viewport);
     return () => observer.disconnect();
-  }, [panel, page, fullscreen]);
+  }, [panel, page, fullscreen, footer]);
   return size;
 }

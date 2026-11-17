@@ -7,7 +7,7 @@ import { t } from "@/lib/i18n";
 import { usePageVisible } from "@/lib/page-visible";
 import { api, useStore, type Bot } from "@/state/store";
 import { BrowserProfilesManager } from "./BrowserProfilesManager";
-import { ChromeRow, type BrowserNav, type BrowserTab } from "./browser/ChromeRow";
+import { BrowserControlPill, ChromeRow, type BrowserNav, type BrowserTab } from "./browser/ChromeRow";
 import { ExtensionsMenu, extensionsOf, type BrowserExtension } from "./browser/ExtensionsMenu";
 import { MoreMenu } from "./browser/MoreMenu";
 import { PasskeyNotice } from "./browser/PasskeyNotice";
@@ -71,7 +71,8 @@ export function LiveBrowser({ bot, signIn, page }: { bot: Bot; signIn?: BrowserS
   const address = useRef<HTMLInputElement>(null);
   const surface = useRef<StreamSurfaceHandle>(null);
   const browserViewport = useRef<HTMLDivElement>(null);
-  const pageSize = useWidescreenBrowser(panel, browserViewport, maximized);
+  const browserTools = useRef<HTMLElement>(null);
+  const pageSize = useWidescreenBrowser(panel, browserViewport, maximized, browserTools);
   const profilesDialog = useRef<HTMLDialogElement>(null);
   const typingDialog = useRef<HTMLDialogElement>(null);
   const clientRef = useRef<PreviewStreamClient | null>(null);
@@ -296,7 +297,7 @@ export function LiveBrowser({ bot, signIn, page }: { bot: Bot; signIn?: BrowserS
     : "flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-hairline/40 bg-card text-ink"} data-browser-transport={stream ? "stream" : "live"}>
     <ChromeRow
       ref={address}
-      picker={stream ? <BrowserElementPicker scopeKey={`${bot.id}:${scopedThread ?? ""}`} read={() => ({ scopeKey: `${bot.id}:${scopedThread ?? ""}`, connected, control: controlRef.current, surface: () => surface.current?.canvas() ?? null, send: message => clientRef.current?.send(message), take: () => browserControl.current?.takeControl() })} /> : undefined}
+      controlsInFooter
       botName={bot.name}
       tabs={tabs}
       nav={nav}
@@ -371,6 +372,11 @@ export function LiveBrowser({ bot, signIn, page }: { bot: Bot; signIn?: BrowserS
         </div>
       ) : null}
     </div>
+    <footer ref={browserTools} role="toolbar" aria-label={t("browser.panel.pageLabel", { name: bot.name })} className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-hairline/40 px-3 py-2">
+      <BrowserControlPill botName={bot.name} connected={connected} control={control} takeStatus={takeStatus}
+        hint={t(kept || signInOpen ? "browser.control.keptHint" : "browser.control.yoursHint", { name: bot.name })} onTake={takeControl} onHandBack={handBack} />
+      {stream ? <BrowserElementPicker scopeKey={`${bot.id}:${scopedThread ?? ""}`} read={() => ({ scopeKey: `${bot.id}:${scopedThread ?? ""}`, connected, control: controlRef.current, surface: () => surface.current?.canvas() ?? null, send: message => clientRef.current?.send(message), take: () => browserControl.current?.takeControl() })} /> : undefined}
+    </footer>
     <dialog ref={profilesDialog} onClose={() => setShowProfiles(false)} onClick={(e) => { if (e.target === e.currentTarget) setShowProfiles(false); }} className="m-auto w-[min(420px,calc(100%-32px))] max-h-[80vh] overflow-auto rounded-2xl border border-hairline/50 bg-card p-5 text-ink shadow-2xl backdrop:bg-black/40">
       <div className="mb-4 flex items-center justify-between"><h2 className="text-[15px] font-medium">{t("browser.panel.profiles")}</h2><button className={button} aria-label={t("browser.panel.closeProfiles")} onClick={() => setShowProfiles(false)}><X size={16} /></button></div>
       {(heldElsewhere || (you && takeStatus !== "")) && <p className="mb-3 text-[12px] text-ink-secondary">{t(heldElsewhere ? "browser.profiles.heldElsewhere" : "browser.profiles.busy")}</p>}

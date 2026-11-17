@@ -49,8 +49,35 @@ const PILL_TEXT: Record<PillState, (bot: string) => string> = {
   waiting: (bot) => t("browser.control.waiting", { name: bot }),
 };
 
+
+export function BrowserControlPill(props: {
+  botName: string; connected: boolean; control: PreviewStreamControl | null; takeStatus: BrowserTakeStatus;
+  hint?: string; onTake: () => void; onHandBack: () => void;
+}) {
+  const { botName, connected, control, takeStatus } = props;
+  const pill = controlPill(connected, control, takeStatus);
+  const yours = pill === "yours";
+  const handsBack = yours || pill === "held";
+  return (<button
+          type="button"
+          aria-pressed={handsBack}
+          aria-label={`${PILL_TEXT[pill](botName)}. ${t(handsBack ? "browser.control.handBack" : "browser.control.take")}`}
+          aria-description={yours ? props.hint : undefined}
+          title={yours && props.hint ? props.hint : t(handsBack ? "browser.control.handBack" : "browser.control.take")}
+          disabled={!connected || pill === "elsewhere" || pill === "connecting" || pill === "taking" || pill === "waiting"}
+          onClick={handsBack ? props.onHandBack : props.onTake}
+          className={`flex max-w-56 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] disabled:cursor-default ${handsBack ? "border-accent-border bg-accent/15 text-accent-text" : "border-hairline text-ink-secondary hover:bg-inset hover:text-ink"}`}
+          data-pill={pill}
+        >
+          {pill === "taking" || pill === "waiting" || pill === "connecting" ? <Loader2 size={12} className="shrink-0 animate-spin" aria-hidden="true" /> : <Hand size={12} className="shrink-0" aria-hidden="true" />}
+          <span className="truncate">{PILL_TEXT[pill](botName)}</span>
+          {pill === "bot" || pill === "watching" ? <span className="shrink-0 text-ink">· {t("browser.control.take")}</span> : handsBack ? <span className="shrink-0">· {t("browser.control.handBack")}</span> : null}
+        </button>);
+}
+
 export const ChromeRow = forwardRef<HTMLInputElement, {
   picker?: import("react").ReactNode;
+  controlsInFooter?: boolean;
   botName: string;
   tabs: BrowserTab[];
   nav: BrowserNav;
@@ -77,10 +104,6 @@ export const ChromeRow = forwardRef<HTMLInputElement, {
   const { botName, tabs, nav, connected, control, takeStatus, commandsReady } = props;
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState(false);
-  const pill = controlPill(connected, control, takeStatus);
-  const yours = pill === "yours";
-  // Whenever the person holds the browser, from this view or another, the pill hands it back.
-  const handsBack = yours || pill === "held";
   const shown = nav.url === "about:blank" ? "" : nav.url;
   return (
     <div className="shrink-0 border-b border-hairline/40">
@@ -95,22 +118,7 @@ export const ChromeRow = forwardRef<HTMLInputElement, {
           )) : <div className="flex items-center gap-2 rounded-xl bg-inset px-3 py-1.5 text-[12px] text-ink-secondary"><Globe size={13} aria-hidden="true" />{t("browser.panel.newTab")}</div>}
           <button className={`${button} shrink-0`} disabled={!commandsReady} aria-label={t("browser.panel.newTab")} title={t("browser.panel.newTab")} onClick={() => props.onCommand({ type: "tabNew" })}><Plus size={16} /></button>
         </div>
-        <button
-          type="button"
-          aria-pressed={handsBack}
-          aria-label={`${PILL_TEXT[pill](botName)}. ${t(handsBack ? "browser.control.handBack" : "browser.control.take")}`}
-          aria-description={yours ? props.hint : undefined}
-          title={yours && props.hint ? props.hint : t(handsBack ? "browser.control.handBack" : "browser.control.take")}
-          disabled={!connected || pill === "elsewhere" || pill === "connecting" || pill === "taking" || pill === "waiting"}
-          onClick={handsBack ? props.onHandBack : props.onTake}
-          className={`flex max-w-56 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] disabled:cursor-default ${handsBack ? "border-accent-border bg-accent/15 text-accent-text" : "border-hairline text-ink-secondary hover:bg-inset hover:text-ink"}`}
-          data-pill={pill}
-        >
-          {pill === "taking" || pill === "waiting" || pill === "connecting" ? <Loader2 size={12} className="shrink-0 animate-spin" aria-hidden="true" /> : <Hand size={12} className="shrink-0" aria-hidden="true" />}
-          <span className="truncate">{PILL_TEXT[pill](botName)}</span>
-          {pill === "bot" || pill === "watching" ? <span className="shrink-0 text-ink">· {t("browser.control.take")}</span> : handsBack ? <span className="shrink-0">· {t("browser.control.handBack")}</span> : null}
-        </button>
-        {props.picker}
+        {!props.controlsInFooter && <><BrowserControlPill botName={botName} connected={connected} control={control} takeStatus={takeStatus} hint={props.hint} onTake={props.onTake} onHandBack={props.onHandBack} />{props.picker}</>}
         <button className={button} title={t(props.maximized ? "browser.panel.restore" : "browser.panel.maximizeHint")} aria-label={t(props.maximized ? "browser.panel.restore" : "browser.panel.maximize")} onClick={props.onMaximize}>{props.maximized ? <Shrink size={15} /> : <AppWindow size={15} />}</button>
         <button className={button} title={t(props.fullscreen ? "browser.panel.exitFullscreen" : "browser.panel.fullscreenHint")} aria-label={t(props.fullscreen ? "browser.panel.exitFullscreen" : "browser.panel.fullscreen")} onClick={props.onFullscreen}>{props.fullscreen ? <Minimize size={15} /> : <Maximize size={15} />}</button>
         <button className={`${button} rounded-xl bg-inset p-1.5`} title={t("browser.panel.profileTitle", { name: props.profileName })} aria-label={t("browser.panel.profiles")} onClick={props.onProfiles}><UserRound size={15} /></button>
