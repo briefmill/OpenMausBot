@@ -49,7 +49,7 @@ function frameBlob(data: string, mime: string): Blob {
  * The Team map's computers and their newest screens, while `enabled`: the server's list every two seconds (which also
  * keeps it capturing small frames of running machines), plus the frames bots' own turns send on the event stream.
  */
-export function useMapComputers(enabled: boolean) {
+export function useMapComputers(enabled: boolean, pollMs = MAP_COMPUTERS_POLL_MS, liveUpdates = true) {
   const [payload, setPayload] = useState<MapComputersPayload | null>(null);
   const [frames, setFrames] = useState<Record<string, ShownFrame>>({});
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +106,7 @@ export function useMapComputers(enabled: boolean) {
       if (stopped || inFlight || document.visibilityState !== "visible") return;
       inFlight = true;
       try {
-        const have = haveParam(framesRef.current);
+        const have = liveUpdates ? haveParam(framesRef.current) : "";
         const next: MapComputersPayload = await api(`/api/computers/frames${have ? `?have=${encodeURIComponent(have)}` : ""}`, { signal: AbortSignal.timeout(30_000) });
         if (stopped) return;
         const receivedAt = Date.now();
@@ -123,20 +123,20 @@ export function useMapComputers(enabled: boolean) {
       }
     };
     void poll();
-    const timer = window.setInterval(poll, MAP_COMPUTERS_POLL_MS);
-    const stopListening = listenLiveFrames({ screens: true,
+    const timer = window.setInterval(poll, pollMs);
+    const stopListening = liveUpdates ? listenLiveFrames({ screens: true,
       onFrame: (frame) => {
         if (frame.kind !== "screen" || frame.surface !== "computer" || !frame.png) return;
         const computer = computerForBot(computersRef.current, frame.botId);
         if (computer) void show(computer.id, frame.png, frame.mime ?? "image/png", Date.now(), "live");
       },
-    });
+    }) : () => {};
     return () => {
       stopped = true;
       window.clearInterval(timer);
       stopListening();
     };
-  }, [enabled, show]);
+  }, [enabled, pollMs, liveUpdates, show]);
 
   return { computers: payload?.computers ?? [], configured: payload?.configured ?? null, frames, error };
 }

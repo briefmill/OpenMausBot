@@ -54,7 +54,8 @@ const binary = process.env.OMB_MAP_TEST_AGENT_BROWSER;
       });
     };
     for (const section of ["General", "BVS", "Briefmill", "Proxie", "Inner Clip", "Personal"]) {
-      await api("POST", "/api/bots", { name: `Demo ${section} specialist`, section, browser: false });
+      const { bot } = await api("POST", "/api/bots", { name: `Demo ${section} specialist`, section });
+      await api("PATCH", `/api/bots/${bot.id}`, { browser: false });
     }
     await api("PATCH", "/api/team-map/layout", { positions: Object.fromEntries(["Engineering", "General", "BVS", "Briefmill", "Proxie", "Inner Clip", "Personal"].map((key) => [key, { x: 40, y: 40 }])) });
     bridge = createServer(dispatch); upgrades.attach(bridge, dispatch);
@@ -75,7 +76,8 @@ const binary = process.env.OMB_MAP_TEST_AGENT_BROWSER;
     await agentBrowser(binary!, env, ["record", "start", join(evidence, "live-browser-previews.webm"), "--fps", "10"]);
     await new Promise((resolve) => setTimeout(resolve, 3_000));
     await agentBrowser(binary!, env, ["record", "stop"]);
-    const connections = stream.size; expect(connections).toBe(2);
+    await expect.poll(() => stream.size).toBe(0);
+    const connections = stream.size;
     await evaluate(`document.querySelector('[data-computer-node="browser:${ids[0]}"] button').click()`);
     await expect.poll(() => evaluate("document.querySelector('[data-opened]').dataset.opened")).toBe(ids[0]);
     await evaluate("document.querySelector('header button').click()");

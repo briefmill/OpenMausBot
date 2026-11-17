@@ -284,6 +284,7 @@ export function TeamMapPage() {
   const [deletingTeam, setDeletingTeam] = useState<string | null>(null);
   const [computersOpen, setComputersOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [activityCategory, setActivityCategory] = useState<"bots" | "desktops" | "browsers">("bots");
   const [createComputerRequest, setCreateComputerRequest] = useState(0);
   const [computers, setComputers] = useState<TeamComputer[]>([]);
   const [computerDrop, setComputerDrop] = useState<{ id: string; section: string } | null>(null);
@@ -303,7 +304,9 @@ export function TeamMapPage() {
   const anyComputer = bots.some((bot) => bot.computer === "cloud" && bot.cloudBackend !== "vps") || computers.some((computer) => computer.section !== null);
   const { show: showComputers, loaded: computersChoiceLoaded, choose: setShowComputers } = useShowComputers(anyComputer);
   const { show: showBrowsers, loaded: browsersChoiceLoaded, choose: setShowBrowsers } = useShowComputers(false, "showBrowsers");
-  const mapComputers = useMapComputers((computersChoiceLoaded && showComputers) || activityOpen);
+  const mapComputers = useMapComputers((computersChoiceLoaded && showComputers) || activityOpen, 15_000, false);
+  const liveComputers = useMapComputers(activityOpen && !computersOpen && activityCategory === "desktops");
+  const activityComputers = activityCategory === "desktops" && liveComputers.configured !== null ? liveComputers : mapComputers;
   const [taggedBotIds, setTaggedBotIds] = useState<string[]>([]);
   const [sent, setSent] = useState<{ botIds: string[]; key: number } | null>(null);
   const sentTimer = useRef<number | undefined>(undefined);
@@ -381,7 +384,7 @@ export function TeamMapPage() {
             <span aria-hidden className={cn("relative h-4 w-7 shrink-0 rounded-full", showBrowsers ? "bg-accent" : "bg-control")}><span className={cn("absolute top-0.5 size-3 rounded-full bg-white shadow-sm", showBrowsers ? "left-3.5" : "left-0.5")} /></span>
             Show browsers
           </button>
-          <button onClick={() => { setComputersOpen(false); setActivityOpen((value) => !value); }} aria-label="Activity" aria-expanded={activityOpen} className="flex items-center gap-2 rounded-lg border border-hairline/60 px-3 py-2 text-[12px] text-ink-secondary hover:bg-control hover:text-ink"><Activity size={17} />Activity</button>
+          <button onClick={() => { setComputersOpen(false); setActivityCategory("bots"); setActivityOpen((value) => !value); }} aria-label="Activity" aria-expanded={activityOpen} className="flex items-center gap-2 rounded-lg border border-hairline/60 px-3 py-2 text-[12px] text-ink-secondary hover:bg-control hover:text-ink"><Activity size={17} />Activity</button>
           {!remoteClient && admin !== false && <details className="relative" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute("open"); }} onKeyDown={(event) => {
             if (event.key === "Escape") { event.currentTarget.removeAttribute("open"); event.currentTarget.querySelector("summary")?.focus(); }
           }}>
@@ -406,7 +409,7 @@ export function TeamMapPage() {
         connectedBotIds={state.settingsOpen ? edges.flatMap((edge) => edge.sourceBotId === state.selectedId ? [edge.targetBotId] : edge.targetBotId === state.selectedId ? [edge.sourceBotId] : []) : []}
         onComputer={(bot) => openBotSettings(dispatch, "access", { botId: bot.id })}
         computers={showComputers && computersChoiceLoaded ? mapComputers.computers : undefined} computerFrames={mapComputers.frames}
-        showBrowsers={showBrowsers && browsersChoiceLoaded && browserPreviewsAvailable}
+        activeBrowserIds={snapshot.activeBrowsers} showBrowsers={showBrowsers && browsersChoiceLoaded && browserPreviewsAvailable}
         onOpenBrowser={(bot) => {
           writeComputerPanelView(bot.id, "browser");
           rememberComputerPanelOpen({ botId: bot.id, opener: document.activeElement instanceof HTMLElement ? document.activeElement : null, tabs: true, browser: true });
@@ -423,7 +426,7 @@ export function TeamMapPage() {
         isEmpty={(key) => ![...state.bots, ...state.groups].some((record) => record.section?.trim() === key)} />
       {bots.length > 0 && <MapComposer bots={bots} teams={composerTeams} onTagged={setTaggedBotIds} onSent={acknowledgeSent} />}
       </div>
-      {activityOpen && !computersOpen && <MapActivity bots={bots} computers={mapComputers.computers} computerError={mapComputers.error} activeBrowsers={snapshot.activeBrowsers} error={refreshError ?? error} onClose={() => setActivityOpen(false)}
+      {activityOpen && !computersOpen && <MapActivity frames={liveComputers.frames} onCategoryChange={setActivityCategory} bots={bots} computers={activityComputers.computers} computerError={activityComputers.error} activeBrowsers={snapshot.activeBrowsers} error={refreshError ?? error} onClose={() => setActivityOpen(false)}
         onBot={(bot) => openBot(dispatch, bot, showThreads)} onBrowser={(bot) => { writeComputerPanelView(bot.id, "browser"); rememberComputerPanelOpen({ botId: bot.id, opener: document.activeElement instanceof HTMLElement ? document.activeElement : null, tabs: true, browser: true }); dispatch({ type: "toggleComputer", botId: bot.id, open: true }); }}
         onDesktop={(computer) => { if (computer.kind === "team") { setActivityOpen(false); setComputersOpen(true); } else { writeComputerPanelView(computer.id, "computer"); dispatch({ type: "toggleComputer", botId: computer.id, open: true }); } }}
         onManage={!remoteClient ? () => { setActivityOpen(false); setComputersOpen(true); } : undefined} />}

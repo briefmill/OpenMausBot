@@ -25,7 +25,7 @@ const STATE_DOT: Record<MapComputerState, string> = {
   problem: "bg-danger",
 };
 
-/** A bot's computer on the Team map: a small monitor with its live screen, state and the bots that use it. */
+/** A bot's computer on the Team map: a small monitor with its screen thumbnail, state and the bots that use it. */
 export const ComputerNode = memo(function ComputerNode({ computer, bots, frameUrl, state, activity, surface, label, previewKind = "vm", x, y, onOpen }: {
   computer: MapComputer;
   bots: Bot[];
@@ -62,6 +62,7 @@ export const ComputerNode = memo(function ComputerNode({ computer, bots, frameUr
         <span className={cn("absolute right-2 top-2 flex items-center gap-1.5 rounded-md border px-2 py-1 text-[13px] font-semibold shadow-sm", browser ? "border-accent/50 bg-inset text-accent-text" : "border-warning/50 bg-inset text-warning")}>
           <KindIcon size={15} aria-hidden="true" />{kindLabel}
         </span>
+        {frameUrl && !surface && <span className="absolute bottom-2 right-2 rounded bg-black/65 px-2 py-0.5 text-[10px] text-white/75">Thumbnail</span>}
         {activity && live && <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/85 via-black/55 to-transparent px-2.5 pb-1.5 pt-6 text-[11px] leading-tight text-white/90">{activity}</span>}
       </span>
       <span className="flex h-[32px] min-w-0 items-center gap-2 px-1 pt-1.5">

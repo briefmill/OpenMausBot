@@ -13,3 +13,11 @@ Verification:
 - The exact preserved deployment bundle is checked with the packaged-server smoke fixture, including a disposable bot and `/api/team-map` response.
 
 No client records, live workflows, or external messages are used by these checks.
+
+## Live list previews and lightweight canvas
+
+Activity's browser rows mount passive, existing-only live previews while the row is visible. Closing Activity, switching categories, hiding the page, or scrolling a row out of view disconnects its stream. Clicking the row opens the existing full viewer.
+
+Canvas browser cards capture one small frame and disconnect; they refresh every 15 seconds while visible and running. Canvas desktop thumbnails poll every 15 seconds without subscribing to live turn frames. Active desktops in Activity use the existing shared frame feed and two-second polling; the canvas retains its separate thumbnails. Desktop provider captures still follow the existing shared capture budget and working/idle intervals, so two-second polling does not promise two-second new captures.
+
+The isolated `activity-stream-ui.e2e.test.ts` checks two actual Chrome browsers: thumbnails finish with zero open viewer streams, the browser list shows changing decoded frames with two streams, no new browser profiles are created, and closing the list returns to zero streams. The Activity UI fixture additionally feeds changing desktop images into the list and checks they decode and update.
