@@ -33,6 +33,8 @@ Expected behavior:
 - Preserve legitimate input locks, approval gates, attachment handling and existing queue/steering behavior.
 - Starting a recording must never send a message or stop a turn automatically.
 
+Additional screenshot confirms the problem while BVS Tasks shows “Thinking it through”: the composer shows Stop and voice-call controls but no dictation microphone. An earlier bubble is labeled “sent mid-turn”; that proves some steering occurred earlier, not that the user can currently queue a message. Treat queued follow-up and immediate steering as separate choices. Ensure the queue action is discoverable during work and does not require stopping the turn. This is both a voice-input availability and queue discoverability report; do not assume removing the microphone's busy guard fixes the entire problem.
+
 Investigation lead: `src/components/Composer.tsx` currently renders the dictation microphone under `!locked && !busy && micReady` near the composer action buttons. That busy guard is a plausible cause, not a complete diagnosis. The custom installed composer also contains voice/dictation modifications; inspect that version before fixing.
 
 Reproduce with an isolated fake-engine turn held on a gate. Confirm the mic remains visible during work, dictation can produce a reviewable draft, queuing targets the same conversation, and the active turn is not interrupted. Cover desktop/compact layout, unavailable mic, cancellation and permission/locked states. The user asked to SAVE this bug for later, not to rush an untested fix before leaving work.
