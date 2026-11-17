@@ -66,7 +66,7 @@ export function createDurableToolExecutor({ledger,authorize,dispatch}){
         if(allowed!==true){const denied={ok:false,text:'Tool call denied by controller authorization.'};transition('pending','denied',denied);return{replay:false,result:denied};}
         transition('pending','dispatching');
         signal.throwIfAborted();current(lease);
-        const output=await bounded(()=>{current(lease);dispatched=true;return dispatch({job:ledger.get(lease.id),call:{id:call.id,...structuredClone(request)},signal});},signal);
+        const output=await bounded(()=>{current(lease);dispatched=true;return dispatch({job:ledger.get(lease.id),lease:structuredClone(lease),call:{id:call.id,...structuredClone(request)},signal});},signal);
         if(typeof output?.ok!=='boolean')throw Error('Model-safe tool result required');
         transition('dispatching','completed',output);
         signal.throwIfAborted();current(lease);
