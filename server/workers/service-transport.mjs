@@ -18,8 +18,8 @@ async function body(req){
 // The supervisor owns TLS keys, service state and lease authorization. Provider
 // processes receive no service-control credentials or management endpoints.
 export async function listenExecutionService({service,worker,assignment,authorize,controllerToken,tls,
-  listenHost='127.0.0.1',advertisedHost='127.0.0.1',port=0,deadlineMs=300000}) {
-  if(!['run','state','cancelUnseen'].every(key=>typeof service?.[key]==='function') || !id(worker) || typeof authorize!=='function' ||
+  browser,listenHost='127.0.0.1',advertisedHost='127.0.0.1',port=0,deadlineMs=300000}) {
+  if((browser!==undefined && typeof browser!=='function') || !['run','state','cancelUnseen'].every(key=>typeof service?.[key]==='function') || !id(worker) || typeof authorize!=='function' ||
      typeof controllerToken!=='string' || controllerToken.length<32 || controllerToken.length>512 ||
      !exact(tls,['key','cert','ca','controllerPin']) || !/^[a-f0-9]{64}$/.test(tls.controllerPin) ||
      ![tls.key,tls.cert,tls.ca].every(value=>(typeof value==='string' || Buffer.isBuffer(value)) && value.length) ||
@@ -38,9 +38,38 @@ export async function listenExecutionService({service,worker,assignment,authoriz
       if(!credential || !timingSafeEqual(digest(credential[1]),tokenHash))throw rejected(401);
       const raw=req.socket.getPeerCertificate().raw;
       if(!req.socket.authorized || !raw || !timingSafeEqual(digest(raw),pin))throw rejected(403);
-      const route=/^\/v1\/jobs\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})\/(run|status|cancel)$/.exec(req.url);
+      const route=/^\/v1\/jobs\/([a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127})\/(run|status|cancel|browser)$/.exec(req.url);
       if(!route || req.method!=='POST')throw rejected(404);
       const [,jobId,action]=route,data=await body(req);
+      if(action==='browser'){
+        if(!browser)throw rejected(503);
+        if(!exact(data,['generation','leaseToken','operation']) || !exact(data.operation,['id','method','params']) ||
+           !id(data.operation.id) || !['initialize','tools/list','tools/call'].includes(data.operation.method) ||
+           !data.operation.params || typeof data.operation.params!=='object' || Array.isArray(data.operation.params) ||
+           Buffer.byteLength(JSON.stringify(data.operation))>65536)throw rejected(400);
+        const slot=active;
+        if(!slot || slot.identity.id!==jobId || slot.identity.generation!==data.generation ||
+           typeof data.leaseToken!=='string' || !timingSafeEqual(digest(data.leaseToken),digest(slot.lease.token)) ||
+           slot.control.signal.aborted || slot.lease.deadline<=Date.now() || service.state(slot.identity)!=='running')throw rejected(409);
+        if(slot.browserBusy)throw rejected(409);
+        slot.browserBusy=true;
+        try{
+        if(slot.browserIds.has(data.operation.id))throw rejected(409);
+        if(slot.browserIds.size>=64)throw rejected(429);
+        slot.browserIds.add(data.operation.id);
+        const bounded=promise=>new Promise((resolve,reject)=>{
+          const abort=()=>reject(rejected(409));slot.control.signal.addEventListener('abort',abort,{once:true});
+          if(slot.control.signal.aborted)abort();
+          Promise.resolve(promise).then(resolve,reject).finally(()=>slot.control.signal.removeEventListener('abort',abort));
+        });
+        if(await bounded(authorize({job:structuredClone(slot.job),lease:structuredClone(slot.lease),signal:slot.control.signal}))!==true)throw rejected(403);
+        if(active!==slot || slot.control.signal.aborted || service.state(slot.identity)!=='running')throw rejected(409);
+        const result=await bounded(browser({job:structuredClone(slot.job),lease:structuredClone(slot.lease),operation:structuredClone(data.operation),signal:slot.control.signal}));
+        if(active!==slot || slot.control.signal.aborted || slot.lease.deadline<=Date.now() || service.state(slot.identity)!=='running')throw rejected(409);
+        if(Buffer.byteLength(JSON.stringify(result)??'')>1024*1024)throw rejected(502);
+        return send(200,{jobId,worker,generation:slot.identity.generation,result});
+        }finally{slot.browserBusy=false;}
+      }
       if(action!=='run'){
         if(!exact(data,['generation']) || !Number.isSafeInteger(data.generation) || data.generation<1)throw rejected(400);
         const identity={id:jobId,worker,generation:data.generation};
@@ -59,7 +88,7 @@ export async function listenExecutionService({service,worker,assignment,authoriz
       if(!data.content || typeof data.content!=='object' || Array.isArray(data.content) || typeof data.content.text!=='string' ||
          Object.keys(data.content).some(key=>!allowed.has(key)))throw rejected(400);
       const identity={id:jobId,worker,generation:data.lease.generation},control=new AbortController();
-      let done;const slot={identity,control,done:new Promise(resolve=>{done=resolve;})};active=slot;
+      let done;const slot={identity,control,job:structuredClone(data.job),lease:structuredClone(data.lease),browserIds:new Set(),done:new Promise(resolve=>{done=resolve;})};active=slot;
       const timer=setTimeout(()=>control.abort(),Math.min(deadlineMs,data.lease.deadline-Date.now()));
       const disconnected=()=>{if(!res.writableEnded)control.abort();};res.once('close',disconnected);
       try{

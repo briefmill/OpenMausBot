@@ -27,6 +27,12 @@ export function createServiceClient({origin,token,tls,worker,allowRemote=false})
         throw Error('Foreign worker service receipt');
       return{lease:structuredClone(lease),result:response.result};
     },
+    async browser({lease,operation,signal}) {
+      identity(lease);
+      const response=await execution.call(`/v1/jobs/${lease.id}/browser`,token,{generation:lease.generation,leaseToken:lease.token,operation},signal);
+      if(response.jobId!==lease.id || response.worker!==worker || response.generation!==lease.generation)throw Error('Foreign browser service receipt');
+      return response.result;
+    },
     async stop(value) {
       const signal=AbortSignal.timeout(8000);
       let result=await status(value,'cancel',signal);

@@ -46,6 +46,7 @@ test('service mTLS binds controller identity, assignments, consumed generations 
     assert.deepEqual(await controller.call('/v1/jobs/one/status',token,{generation:1}),{state:'completed',stoppedVerified:true});
     assert.deepEqual(await controller.call('/v1/jobs/one/status',token,{generation:2}),{state:null,stoppedVerified:false});
     const bound=createServiceClient({origin:transport.origin,token,worker,tls:{...certs.peer('controller'),serverPin:certs.pin('server')}});clients.push(bound);
+    await assert.rejects(bound.browser({lease:task('one').lease,operation:{id:'no-executor',method:'tools/list',params:{}}}),/503/);
     const next=task('two');assert.equal((await bound.execute({...next,input:{botId:'bot',threadId:'thread',text:'synthetic'},signal:AbortSignal.timeout(2000)})).result.ok,true);
     await bound.stop(next.lease);assert.equal(await bound.inspectStopped(next.lease),true);
     await bound.stop(task('unseen').lease);
@@ -92,4 +93,27 @@ test('service listener accepts explicit dual-stack binding with named pinned TLS
     const current=task('dual');const reply=await client.execute({...current,input:{botId:'bot',threadId:'thread',text:'synthetic'},signal:AbortSignal.timeout(2000)});
     assert.equal(reply.result.ok,true);assert.equal(await client.inspectStopped(current.lease),true);
   }finally{client?.close();await listener?.close();service.close();rmSync(root,{recursive:true,force:true});}
+});
+
+test('browser route requires pinned controller, active exact lease, fresh authorization and unique invocation',async()=>{
+ const root=mkdtempSync(join(tmpdir(),'omb-service-browser-')),certs=certificates(root);let listener,client,entered,finish,releaseBrowser,allowed=true,calls=0;
+ const started=new Promise(resolve=>entered=resolve),held=new Promise(resolve=>finish=resolve);
+ const service=createServiceExecution({file:':memory:',worker,execute:async()=>{entered();await held;return{result};},stop:async()=>{},inspectStopped:async()=>true});
+ try{
+  listener=await listenExecutionService({service,worker,assignment,authorize:async()=>allowed,controllerToken:token,
+    browser:async({job,operation})=>{calls++;if(operation.id==='slow')await new Promise(resolve=>{releaseBrowser=resolve;});return{thread:job.thread,id:operation.id};},tls:{...certs.peer('server'),controllerPin:certs.pin('controller')}});
+  client=createServiceClient({origin:listener.origin,token,worker,tls:{...certs.peer('controller'),serverPin:certs.pin('server')}});
+  const current=task('browser'),operation={id:'call-1',method:'tools/list',params:{}};
+  await assert.rejects(client.browser({lease:current.lease,operation}),/409/);
+  const running=client.execute({...current,input:{botId:'bot',threadId:'thread',text:'synthetic'},signal:AbortSignal.timeout(5000)});await started;
+  await assert.rejects(client.browser({lease:{...current.lease,token:'b'.repeat(64)},operation}),/409/);
+  await assert.rejects(client.browser({lease:{...current.lease,generation:2},operation}),/409/);
+  assert.deepEqual(await client.browser({lease:current.lease,operation}),{thread:'thread',id:'call-1'});
+  await assert.rejects(client.browser({lease:current.lease,operation}),/409/);
+  const slow=client.browser({lease:current.lease,operation:{...operation,id:'slow'}});
+  const waitUntil=Date.now()+1000;while(!releaseBrowser){assert.ok(Date.now()<waitUntil);await new Promise(resolve=>setTimeout(resolve,5));}
+  await assert.rejects(client.browser({lease:current.lease,operation:{...operation,id:'parallel'}}),/409/);releaseBrowser();await slow;
+  allowed=false;await assert.rejects(client.browser({lease:current.lease,operation:{...operation,id:'refused'}}),/403/);assert.equal(calls,2);
+  allowed=true;finish();await running;await assert.rejects(client.browser({lease:current.lease,operation:{...operation,id:'late'}}),/409/);
+ }finally{finish?.();client?.close();await listener?.close();service.close();rmSync(root,{recursive:true,force:true});}
 });
