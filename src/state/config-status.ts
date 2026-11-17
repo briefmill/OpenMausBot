@@ -73,7 +73,7 @@ export interface ConfigStatus {
   /** Bots paused for the plan's limit: kept, but taking no turns. */
   pausedBots?: string[];
   /** What the person paused (Pause in the sidebar menus): bots by id and departments by name. Absent from older servers. */
-  pausedByPerson?: { bots: string[]; departments: string[] };
+  pausedByPerson?: { bots: string[]; departments: string[]; all?: true };
   /** Every bot taking no new work because the person paused it or its department. */
   heldBots?: string[];
   /** The server cannot read its saved routines, so none runs until it can. */
@@ -110,7 +110,10 @@ export interface ConfigStatus {
    * saved. OpenRouter only: `keySource` says which key is in use (its own, or
    * the one under Settings → API keys); `sharedKey`: that one is on file. */
   decider?: {
-    provider: "jev" | "workersai" | "openrouter" | "custom";
+    provider: "jev" | "workersai" | "openrouter" | "custom" | "gemini";
+    /** Jev, when the person picked it but the shared OpenRouter key decides until a Jev key is saved; OpenRouter, when
+     * it was picked but a saved Gemini key decides until an OpenRouter key is saved. */
+    chosen?: "jev" | "openrouter";
     /** The OpenRouter or custom model in use; present only while that is the provider. */
     model?: string;
     /** The custom endpoint's protocol, or the OpenRouter API. */
@@ -160,7 +163,7 @@ export interface ConfigStatus {
   /** What a paired phone calls this computer; "" uses the default. */
   computerName?: string;
   /** Opt-in flags. Absent means off. */
-  features?: { skillAuthoring: boolean; skillReview?: boolean; skillReviewSteps?: number; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; skillsLibrary?: boolean; shareLearnedSkills?: "off" | "ask" | "auto"; roomMemoryCapture?: boolean; savedSteps?: boolean; savedStepsHere?: boolean; usbPhoneTakeover?: boolean };
+  features?: { skillAuthoring: boolean; skillReview?: boolean; skillReviewSteps?: number; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; skillsLibrary?: boolean; shareLearnedSkills?: "off" | "ask" | "auto"; roomMemoryCapture?: boolean; savedSteps?: boolean; savedStepsHere?: boolean; usbPhoneTakeover?: boolean };
   /** First-run progress: whether the welcome tour was finished and which
    * one-time hints were dismissed. Server-owned so it follows the workspace. */
   onboarding?: OnboardingStatus;

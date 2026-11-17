@@ -11,7 +11,7 @@ export interface RoomRoundLine { current?: string; pending: string[] }
 export interface RoomJobsDeps {
   store: Store;
   // Read lazily: index.ts builds the coordinator after this module.
-  coordinator: Pick<Coordinator, "all">;
+  coordinator: Pick<Coordinator, "active">;
   cfg: AppConfig;
   operations: (groupId: string) => Iterable<{ threadId: string; cancelled: boolean; line?: RoomRoundLine }>;
   speakerOf: (threadId: string) => string | undefined;
@@ -19,7 +19,7 @@ export interface RoomJobsDeps {
 }
 
 export function parallelRoomJobsEnabled(cfg: AppConfig): boolean {
-  return cfg.features?.parallelRoomJobs === true;
+  return cfg.features?.parallelRoomJobs !== false;
 }
 
 const live = (n: HandoffView) => n.parentId !== undefined && (n.status === "queued" || n.status === "running");
@@ -33,7 +33,7 @@ export function createRoomJobs({ store, coordinator, cfg, operations, speakerOf,
       if (current) items.push({ botId: current, threadId: operation.threadId, state: "running" });
       for (const botId of pending) items.push({ botId, threadId: operation.threadId, state: "queued" });
     }
-    const jobs = coordinator.all().filter(n => n.groupId === record.id && live(n)).sort((a, b) => a.createdAt - b.createdAt);
+    const jobs = coordinator.active().filter(n => n.groupId === record.id && live(n)).sort((a, b) => a.createdAt - b.createdAt);
     for (const n of jobs) items.push({ botId: n.botId, threadId: n.threadId, state: n.status === "running" ? "running" : "queued", assignmentId: n.id });
     const speakers = new Map<string, string>();
     for (const threadId of new Set(items.map(item => item.threadId))) {
@@ -51,7 +51,14 @@ export function createRoomJobs({ store, coordinator, cfg, operations, speakerOf,
 
   function useLanes(room: GroupRecord, roomThreadId: string, jobs: number, mode: string): boolean {
     if (mode === "notify" || !parallelRoomJobsEnabled(cfg)) return false;
-    return jobs > 1 || coordinator.all().some(n => live(n) && (n.groupId === room.id ? n.threadId === roomThreadId : laneRoomThread(n) === roomThreadId));
+    return jobs > 1 || coordinator.active().some(n => live(n) && (n.groupId === room.id ? n.threadId === roomThreadId : laneRoomThread(n) === roomThreadId));
+  }
+
+  // A job running beside its room still follows the room's shared instructions.
+  function laneBulletin(n: Pick<HandoffView, "botId" | "threadId" | "groupId">): string {
+    const room = store.groupByThread(laneRoomThread(n) ?? "");
+    const bulletin = room?.bulletin.trim();
+    return room && bulletin ? `Room bulletin of "${room.name}" (shared instructions for everyone):\n${bulletin}` : "";
   }
 
   function openLane(room: GroupRecord, roomThreadId: string, botId: string, sender: { id: string; name: string }, brief: string) {
@@ -81,5 +88,5 @@ export function createRoomJobs({ store, coordinator, cfg, operations, speakerOf,
     return [parallel, sequential].filter(Boolean).join(" ");
   }
 
-  return { roomLineOf, advanceRound, useLanes, openLane, describeRoomJobs };
+  return { roomLineOf, advanceRound, useLanes, laneBulletin, openLane, describeRoomJobs };
 }
