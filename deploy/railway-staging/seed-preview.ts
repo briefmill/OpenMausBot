@@ -33,3 +33,17 @@ if(existsSync(previewSignatures))for(const name of readdirSync(previewSignatures
  if(!changed)continue;
  draft.revision++;writeFileSync(path+".tmp",JSON.stringify(draft),{mode:0o600});renameSync(path+".tmp",path);
 }
+
+const socialMarker=join(dir,".social-reply-preview-v1");
+if(!existsSync(socialMarker)){
+ const store=new Store(()=>({instanceId:"claude",model:"sonnet"}));
+ const bot=store.bots.find(bot=>bot.name==="Reply composer preview");
+ if(bot){
+  const drafts=new ReplyDraftStore(join(dir,"reply-drafts"));
+  const draft=drafts.create(bot.id,bot.threadId,{channel:"social",platform:"instagram",account:"Example business",conversation:"Example client",replyToId:"synthetic-message-1",kind:"message",sourceUrl:"https://www.instagram.com/direct/inbox/",text:"Thanks for reaching out. Could you share your order number?"},undefined,{sender:"Example client",text:"Hi, can you help me with an order?",interpretation:"Synthetic Instagram example. No social account was accessed.",attachments:[]});
+  const path=join(dir,"reply-drafts",draft.id+".json");const saved={...draft,preview:true};writeFileSync(path+".tmp",JSON.stringify(saved),{mode:0o600});renameSync(path+".tmp",path);
+  store.appendMessage(bot.threadId,{role:"bot",kind:"widget",replyDraftId:draft.id,text:"Instagram composer preview"});
+  writeFileSync(socialMarker,"Synthetic social preview added\n",{mode:0o600});
+ }
+ closeMessageDb();
+}

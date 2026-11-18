@@ -1,3 +1,4 @@
+import { socialReplySchema } from "./social-reply.ts";
 import { z } from "zod";
 const header = z.string().trim().max(500).refine(value => !/[\r\n\0]/.test(value), "Headers cannot contain line breaks");
 const address = header.pipe(z.email());
@@ -5,6 +6,7 @@ const recipients = z.array(address).max(50);
 export const emailSignatureSchema = z.object({text:z.string().max(10_000),html:z.string().max(30_000).optional()}).strict();
 export type EmailSignature = z.infer<typeof emailSignatureSchema>;
 export const replyContentSchema = z.discriminatedUnion("channel", [
+  socialReplySchema,
   z.object({channel:z.literal("email"),from:address,signature:emailSignatureSchema.optional(),to:recipients.min(1),cc:recipients.default([]),bcc:recipients.default([]),subject:header.min(1),text:z.string().min(1).max(50_000),mailbox:header.default("INBOX"),replyToUid:z.number().int().positive().optional()}).strict(),
   z.object({channel:z.literal("slack"),frontDeskDraftId:z.uuid(),text:z.string().min(1).max(4000)}).strict(),
 ]);

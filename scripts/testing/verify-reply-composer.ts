@@ -42,5 +42,16 @@ try {
  const collapse=Object.entries(collapseRefs).find(([,value])=>value.name==="Hide details")?.[0];if(collapse)await browser("click",`@${collapse}`);
  await browser("eval","window.scrollTo(0,0)");
  await browser("screenshot","/tmp/reply-composer-preview.png","--full");
- console.log("PASS: isolated server startup, inbound context renders, editable reply saves to durable server draft.");
+ const social=store.create(bot.id,bot.threadId,{channel:"social",platform:"instagram",account:"Example business",conversation:"Example client",replyToId:"synthetic-inbound-1",kind:"message",sourceUrl:"https://www.instagram.com/direct/inbox/",text:"Thanks for your message."},undefined,{sender:"Example client",text:"Can you help with my order?",attachments:[]});
+ await browser("open",`${preview.previewUrl}?draft=${social.id}`);
+ await browser("wait","--text","Instagram");
+ assert.equal((await browser("eval",`Boolean(document.querySelector('img[src="/app-logos/instagram.svg"]'))`)).result,true);
+ assert.equal((await browser("eval",`[...document.querySelectorAll('button')].find(button=>button.textContent==='Send').disabled`)).result,true);
+ await browser("fill","textarea[aria-label='Reply message']","Edited Instagram reply.");
+ const socialRefs=(await browser("snapshot","-i")).refs as Record<string,{name:string}>;
+ const saveSocial=Object.entries(socialRefs).find(([,value])=>value.name==="Save draft")?.[0];assert.ok(saveSocial);
+ await browser("click",`@${saveSocial}`);await browser("wait","--text","Draft saved");
+ assert.equal(store.read(social.id).content.text,"Edited Instagram reply.");
+ await browser("screenshot","/tmp/social-reply-composer-preview.png","--full");
+ console.log("PASS: isolated server startup, email signature and compact editor, Instagram logo and destination, disabled unsupported send, durable edited social draft.");
 } finally {await browser("close").catch(()=>{});await preview?.close();await fixture.close();}

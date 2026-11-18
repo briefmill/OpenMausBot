@@ -663,7 +663,7 @@ const MessagesList = memo(function MessagesList({
   onRegenerate: () => void;
   onReply: (message: Message) => void;
 }) {
-  const { botId, threadId, botName, botColor, bots, hasMore, focus, showToolCalls, locale, simple = false } = useChatRows(), busy = use(ChatBusyContext);
+  const { botId, threadId, botName, botColor, bots, hasMore, focus, showToolCalls, locale, canReact, simple = false } = useChatRows(), busy = use(ChatBusyContext);
   const messages = useLiveTranscript(threadId, saved, transcript);
   // A finished turn keeps the bot's progress lines and folds only its tool steps under "Worked for", in both modes.
   const items = useMemo(() => groupTranscript(messages), [messages, locale]);
@@ -725,7 +725,7 @@ const MessagesList = memo(function MessagesList({
               return optionsCardRow({ message: m, transcript, botId, botName, botColor: bots.find((one) => one.id === m.inbox?.from.botId)?.color ?? botColor, threadId, asker: bots.find((one) => one.id === (m.inbox?.from.botId ?? botId)) });
             case "widget":
             case "app":
-              return <RichMessageRow botId={botId} botName={botName} threadId={threadId} message={m} />;
+              return <RichMessageRow botId={botId} botName={botName} threadId={threadId} message={m} onReply={onReply} canReact={canReact} />;
             case "routine.run":
               return <RoutineRunRow message={m} botId={botId} />;
             case "call":

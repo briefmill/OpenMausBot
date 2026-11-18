@@ -49,3 +49,17 @@ Provider settings lookup is still unavailable: no Gmail/Outlook OAuth signature-
 
 ## Provider branding and composer palette
 Gmail/Outlook headers use local provider logos. Native mailbox IMAP/SMTP metadata takes priority, including custom business domains; known public addresses are a fallback when server metadata is unavailable. Unknown mail providers keep the Mail envelope. Slack keeps its logo. Reply cards now use the requested charcoal background, lighter message surface, gray labels, and white Send button. The signature preview uses the same dark background. Styling is scoped to reply cards.
+
+## Social cards and chat actions — Windows handoff
+
+Branch: `codex/reply-composer`. Continue in draft PR #6: https://github.com/briefmill/OpenMausBot/pull/6. Do not replace the existing custom-source baseline. All renderer/server changes belong to this PR; production remains unchanged.
+
+Reply composer cards now reuse the existing chat Reply, React, and Copy controls. Reply targets the card's message ID with the current reply text; Copy uses the current editor body (plus email signature text), not the placeholder widget label. Reactions use the normal persistent chat reaction endpoint and chips. These reactions are feedback in MausBot, not external social-platform reactions. Chat write restrictions still govern Reply/React; rooms stay read-only.
+
+Social draft cards support Instagram, Facebook, Messenger, LinkedIn, X, YouTube, TikTok, and Threads with local platform logos. They carry inbound quote, interpretation and downloaded attachments through the existing copied-file pipeline, plus the displayed sending account, conversation, reply/comment type, original source link, and inbound message ID. Source links must use HTTPS on the selected platform. Editing can change reply text but cannot retarget the account/conversation/source message. Social source metadata is bot-reported, not remotely verified.
+
+IMPORTANT REMAINING WORK: social delivery adapters/account authorization are not connected. Social Send is disabled in the UI and rejected server-side; Copy and Open original are available. Do not claim these cards send DMs/comments or react externally. Build per-platform authenticated adapters, validate that the connected account owns the immutable destination, bind provider state to the human-reviewed hash, then verify in a sandbox before enabling Send. Do not test against real contacts.
+
+Staging seeding adds one clearly synthetic Instagram card to the existing composer preview chat, once, with sending disabled. New bundled helper must be built after every server build using `node deploy/railway-staging/build-preview.mjs`.
+
+Provider signature settings import remains unfinished; current signatures use saved native-mailbox defaults or a user-pasted signature. Other earlier outstanding items, including busy-turn voice/message queue controls and browser teaching recorder, are not completed by this PR.

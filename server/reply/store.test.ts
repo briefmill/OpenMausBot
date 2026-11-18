@@ -40,3 +40,9 @@ describe("reviewed replies",()=>{
   expect(store.read(draft.id).state).toBe("sending");expect(new ReplyDraftStore(dir).read(draft.id).state).toBe("delivery_unknown");finish({id:"done"});await pending;
  });
 });
+it("pins social reply destinations while allowing text edits",()=>{
+ const {store}=fixture();const draft=store.create("bot","thread",{channel:"social",platform:"instagram",account:"Example",conversation:"Client",replyToId:"inbound-1",kind:"message",sourceUrl:"https://instagram.com/direct/inbox/",text:"Draft"});
+ const edited=store.edit(draft.id,1,{...draft.content,text:"Human edited"});expect(edited.content.text).toBe("Human edited");
+ if(edited.content.channel!=="social")throw new Error("Expected social draft");
+ expect(()=>store.edit(draft.id,edited.revision,{...edited.content,replyToId:"another-message"})).toThrow(/destination/);
+});

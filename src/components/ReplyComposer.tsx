@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEventHandler } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEventHandler, type ReactNode } from "react";
 import { Check, ChevronDown, Loader2, Mail } from "lucide-react";
+import { socialLabels } from "../../shared/social-reply";
 import { emailProvider, type EmailProvider } from "../../shared/email-provider";
 import type { MessageAttachmentContext } from "./AttachmentPreview";
 import { AttachmentGallery } from "./AttachmentGallery";
@@ -20,7 +21,7 @@ function ReplyBody({value,disabled,onChange,onPaste,label="Reply message"}:{valu
  useEffect(()=>{const node=ref.current;if(!node)return;let width=node.getBoundingClientRect().width;const observer=new ResizeObserver(()=>{const next=node.getBoundingClientRect().width;if(next!==width){width=next;resize();}});observer.observe(node);return()=>observer.disconnect();},[]);
  return <textarea ref={ref} aria-label={label} rows={1} disabled={disabled} className={`${field} min-h-[60px] resize-none leading-relaxed`} value={value} onPaste={onPaste} onChange={event=>onChange(event.target.value)}/>;
 }
-export function ReplyComposer({id,viewOnly=false,message}:{id:string;viewOnly?:boolean;message?:MessageAttachmentContext}) {
+export function ReplyComposer({id,viewOnly=false,message,actions}:{id:string;viewOnly?:boolean;message?:MessageAttachmentContext;actions?:(text:string)=>ReactNode}) {
  const [detailsOpen,setDetailsOpen]=useState(false);
  const [signatureOpen,setSignatureOpen]=useState(false);
  const [saved,setSaved]=useState<Answer>();const [content,setContent]=useState<ReplyContent>();const [error,setError]=useState("");const [busy,setBusy]=useState(false);const inFlight=useRef(false);const savedRef=useRef(saved);const contentRef=useRef(content);savedRef.current=saved;contentRef.current=content;
@@ -52,9 +53,9 @@ export function ReplyComposer({id,viewOnly=false,message}:{id:string;viewOnly?:b
  const email=content.channel==="email";const locked=viewOnly||busy||saved.draft.state!=="draft";const patch=(values:Partial<ReplyContent>)=>{setContent({...content,...values} as ReplyContent);if(!error.includes("another device"))setError("");};
  const senderChanged=content.channel==="email"&&saved.draft.content.channel==="email"&&content.from.toLowerCase()!==saved.draft.content.from.toLowerCase();
  const addresses=(value:string)=>value.split(",").map(item=>item.trimStart());
- const provider=content.channel==="email"?(!senderChanged&&saved.emailProvider||emailProvider(content.from)):"slack";
- const providerLabel=provider==="gmail"?"Gmail":provider==="outlook"?"Outlook":provider==="slack"?"Slack":"Mail";
- return <section aria-label={email?"Email reply composer":"Slack reply composer"} className="reply-composer w-full max-w-[640px] overflow-hidden rounded-2xl bg-composer p-4 text-ink ring-1 ring-composer-ring">
+ const provider=content.channel==="email"?(!senderChanged&&saved.emailProvider||emailProvider(content.from)):content.channel==="social"?content.platform:"slack";
+ const providerLabel=provider==="gmail"?"Gmail":provider==="outlook"?"Outlook":provider==="slack"?"Slack":content.channel==="social"?socialLabels[content.platform]:"Mail";
+ return <section aria-label={email?"Email reply composer":content.channel==="social"?"Social reply composer":"Slack reply composer"} className="reply-composer w-full max-w-[640px] overflow-hidden rounded-2xl bg-composer p-4 text-ink ring-1 ring-composer-ring">
   <header className="mb-3 flex items-center gap-2 text-[14px] font-medium"><span className="flex size-5 shrink-0 items-center justify-center">{provider==="email"?<Mail size={18} aria-hidden="true"/>:<img src={`/app-logos/${provider}.svg`} alt="" width={18} height={18}/>}</span>{providerLabel}<span className="ml-auto text-[12px] text-ink-secondary">{dirty?"Unsaved changes":saved.draft.state==="draft"?"Draft saved":saved.draft.state.replaceAll("_"," ")}</span></header>
   {saved.draft.preview&&<p className="mb-3 text-[12px] text-ink-secondary">Synthetic preview · sending disabled</p>}
   {saved.draft.inbound&&<div className="mb-3 space-y-2 border-b border-hairline/50 pb-3">
@@ -82,7 +83,7 @@ export function ReplyComposer({id,viewOnly=false,message}:{id:string;viewOnly?:b
     <label className="block text-[12px] text-ink-secondary">Subject<input aria-label="Subject" disabled={locked} className={field} value={content.subject} onChange={event=>patch({subject:event.target.value})}/></label>
     {content.replyToUid&&<p className="text-[12px] text-ink-secondary">Reply to message {content.replyToUid} · {content.mailbox}</p>}
     </div>}
-   </div>:<p className="mb-3 break-words text-[12px] text-ink-secondary">#{saved.draft.destination?.channel} · {saved.draft.destination?.workspace} · From {saved.draft.destination?.sender}{saved.draft.destination?.thread&&<> · Reply in thread {saved.draft.destination.thread}</>}</p>}
+   </div>:content.channel==="social"?<div className="mb-3 text-[12px] text-ink-secondary"><p>{content.kind==="comment"?"Reply to comment":"Direct message"} · {content.conversation} · From {content.account}</p><a className="underline" href={content.sourceUrl} target="_blank" rel="noopener noreferrer">Open original {socialLabels[content.platform]} {content.kind}</a><p className="mt-2">Sending is not connected. Copy your reply to use it on {socialLabels[content.platform]}.</p></div>:<p className="mb-3 break-words text-[12px] text-ink-secondary">#{saved.draft.destination?.channel} · {saved.draft.destination?.workspace} · From {saved.draft.destination?.sender}{saved.draft.destination?.thread&&<> · Reply in thread {saved.draft.destination.thread}</>}</p>}
    <ReplyBody value={content.text} disabled={locked} onChange={text=>patch({text})}/>
    {content.channel==="email"&&<div aria-label="Email signature" className="mt-3 text-[12px] text-ink-secondary">
     {content.signature?.html ? <SignaturePreview html={content.signature.html}/> : content.signature?.text ? <div aria-label="Signature preview" className="whitespace-pre-wrap break-words border-l-2 border-hairline pl-3 text-[13px] leading-relaxed text-ink">{content.signature.text}</div> : <p>{senderChanged?"Save draft to load this account’s signature.":"Default signature unavailable for this account."}</p>}
@@ -93,8 +94,9 @@ export function ReplyComposer({id,viewOnly=false,message}:{id:string;viewOnly?:b
    </div>}
    {saved.draft.deliveryError&&<p role="alert" className="mt-3 text-[13px] text-danger">{saved.draft.deliveryError}</p>}
    {saved.draft.state==="delivery_unknown"&&<p role="alert" className="mt-3 text-[13px] text-warning">Delivery could not be confirmed. Check the destination before preparing another reply. Automatic retry is disabled.</p>}
-   {!viewOnly&&saved.draft.state==="draft"&&<footer className="mt-3 flex flex-wrap items-center justify-end gap-3"><button disabled={busy} onClick={()=>void run("discard")} className="text-[13px] text-ink-secondary">Discard</button><button disabled={busy||!dirty||error.includes("another device")} onClick={()=>void run("save")} className="rounded-full border border-hairline px-4 py-2 text-[13px]">Save draft</button><button disabled={Boolean(saved.draft.preview)||senderChanged||busy||!content.text.trim()||Boolean(error)} onClick={()=>void run("send")} className="flex items-center gap-2 rounded-full reply-send px-5 py-2 text-[13px] font-medium">{busy&&<Loader2 size={14} className="animate-spin"/>}Send</button></footer>}
+   {!viewOnly&&saved.draft.state==="draft"&&<footer className="mt-3 flex flex-wrap items-center justify-end gap-3"><button disabled={busy} onClick={()=>void run("discard")} className="text-[13px] text-ink-secondary">Discard</button><button disabled={busy||!dirty||error.includes("another device")} onClick={()=>void run("save")} className="rounded-full border border-hairline px-4 py-2 text-[13px]">Save draft</button><button disabled={content.channel==="social"||Boolean(saved.draft.preview)||senderChanged||busy||!content.text.trim()||Boolean(error)} onClick={()=>void run("send")} className="flex items-center gap-2 rounded-full reply-send px-5 py-2 text-[13px] font-medium">{busy&&<Loader2 size={14} className="animate-spin"/>}Send</button></footer>}
   </>}
+  {actions&&<div className="mt-3 border-t border-hairline/50 pt-2">{actions(content.channel==="email"&&content.signature?.text?`${content.text}\n\n${content.signature.text}`:content.text)}</div>}
   {error&&<div role="alert" className="mt-3 text-[13px] text-danger">{error}<button onClick={()=>void load()} className="ml-2 underline">Reload draft</button></div>}
  </section>;
 }

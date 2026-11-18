@@ -9207,6 +9207,7 @@ ROUTES.push(createReplyDraftRoutes({store:replyDrafts,
    if(!("content" in result)||result.isError)throw new Error("Email delivery not confirmed");
    return {id:draft.id};
   }
+  if(draft.content.channel==="social")throw new ReplyNotSent("Social sending is not connected. Nothing was sent.");
   const bot=store.bot(draft.botId);
   if(!bot||!draft.destination||!Object.values(customMcpServers(cfg,bot.mcpServers,bot.id)).some(server=>"url" in server&&typeof server.url==="string"&&server.url===`https://watcher-production-86cc.up.railway.app/mcp/scoped/${draft.destination!.scope}`))throw new ReplyNotSent("Slack access is no longer assigned to this bot. Nothing was sent.");
   let remote;try{remote=await frontDeskDraftRequest(draft.content.frontDeskDraftId,"GET");}catch{throw new ReplyNotSent("Front Desk could not load this draft. Nothing was sent.");}
@@ -13038,6 +13039,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const access=emailAccess(internalSender,"EMAIL_SEND_MESSAGE");
           if(!access.ok||!emailService.store.get(content.from))return json(res,403,{error:"This bot needs a connected, permitted sending mailbox."});
           content.signature=emailService.store.get(content.from)?.signature;
+        }else if(content.channel==="social"){
+          if(!inbound)return json(res,400,{error:"Include the original inbound social message and sender."});
         }else{
           const remote=await frontDeskDraftRequest(content.frontDeskDraftId,"GET");
           const allowed=Object.values(customMcpServers(cfg,internalSender.mcpServers,internalSender.id)).some(server=>"url" in server&&typeof server.url==="string"&&server.url.startsWith("https://watcher-production-86cc.up.railway.app/mcp/scoped/"+String(remote.scope))&&new URL(server.url).pathname.endsWith("/"+String(remote.scope)));
@@ -13046,7 +13049,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         requireActiveInternalCapability();
         const draft=replyDrafts.create(internalSender.id,internalCapability.threadId,content,destination,inbound);
-        const message=store.appendMessage(internalCapability.threadId,{role:"bot",kind:"widget",replyDraftId:draft.id,attachments:inboundAttachments,text:`${content.channel==="email"?"Email":"Slack"} reply draft ready for review.`});
+        const message=store.appendMessage(internalCapability.threadId,{role:"bot",kind:"widget",replyDraftId:draft.id,attachments:inboundAttachments,text:`${content.channel==="email"?"Email":content.channel==="social"?"Social":"Slack"} reply draft ready for review.`});
         return json(res,201,{draftId:draft.id,messageId:message.id});
       }
       if (method === "POST" && path === "/api/internal/options-card") {

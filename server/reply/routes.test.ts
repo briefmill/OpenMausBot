@@ -47,3 +47,12 @@ it("loads defaults for the selected sender and never carries another account's s
  const third=await request("PATCH",{revision:saved.body.draft.revision,content:{...saved.body.draft.content,from:"third@example.com"}});
  expect(third.body.draft.content.signature).toBeUndefined();
 });
+
+it("rejects social sends before invoking delivery",async()=>{
+ const dir=mkdtempSync(join(tmpdir(),"social-send-route-"));dirs.push(dir);const store=new ReplyDraftStore(dir);
+ const draft=store.create("bot","thread",{channel:"social",platform:"instagram",account:"Example",conversation:"Client",replyToId:"inbound-1",kind:"message",sourceUrl:"https://instagram.com/direct/inbox/",text:"Reviewed reply"});
+ let calls=0;let status=0;
+ const route=createReplyDraftRoutes({store,visible:()=>true,deliver:async()=>{calls++;return{id:"never"};}});
+ await route({path:`/api/reply-drafts/${draft.id}/send`,method:"POST",auth:{kind:"loopback",scopes:["admin","client"]},req:{headers:{"content-type":"application/json"}},res:{setHeader(){}},readBody:async()=>({revision:1,hash:replyHash(draft)}),json:(_res:unknown,code:number)=>{status=code;}} as unknown as RouteContext);
+ expect(status).toBe(409);expect(calls).toBe(0);expect(store.read(draft.id).state).toBe("draft");
+});

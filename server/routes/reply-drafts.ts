@@ -26,7 +26,7 @@ export function createReplyDraftRoutes(deps:{store:ReplyDraftStore;provider?(fro
     const updated=deps.store.edit(draft.id,body.revision,content,body.discard);
     if(body.saveSignature&&updated.content.channel==="email"&&updated.content.signature)deps.saveSignature!(updated.content.from,updated.content.signature);
     return answer(updated);}
-   if(method==="POST"&&match[2]){if(draft.preview)return json(res,403,{error:"This is a synthetic preview. Sending is disabled."});const body=send.parse(await readBody(req,1024));return answer(await deps.store.send(draft.id,body.revision,body.hash,deps.deliver));}
+   if(method==="POST"&&match[2]){if(draft.preview)return json(res,403,{error:"This is a synthetic preview. Sending is disabled."});if(draft.content.channel==="social")return json(res,409,{error:"Social sending is not connected. Copy the reviewed reply and open the original message."});const body=send.parse(await readBody(req,1024));return answer(await deps.store.send(draft.id,body.revision,body.hash,deps.deliver));}
    return json(res,405,{error:"Method not allowed"});
   }catch(error){return json(res,error instanceof z.ZodError?400:(error as {status?:number}).status??500,{error:error instanceof z.ZodError?"Invalid reply fields":(error as Error).message});}
  };

@@ -1,0 +1,33 @@
+// @vitest-environment happy-dom
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { Message } from "@/state/store";
+const fixture=vi.hoisted(()=>({api:vi.fn(),dispatch:vi.fn()}));
+vi.mock("@/state/store",async original=>{const store=await original<typeof import("@/state/store")>();return {...store,api:fixture.api,useStore:()=>({state:store.initialState,dispatch:fixture.dispatch})};});
+const {RichMessageRow}=await import("./RichMessageRow");
+const {setLocale}=await import("@/lib/i18n");
+const message:Message={id:"message-1",at:1,role:"bot",kind:"widget",text:"Social reply draft ready",replyDraftId:"00000000-0000-4000-8000-000000000001"};
+let host:HTMLDivElement;let root:ReturnType<typeof createRoot>;
+const writeText=vi.fn(async()=>{});
+beforeEach(()=>{setLocale("en");vi.clearAllMocks();host=document.createElement("div");document.body.append(host);root=createRoot(host);vi.stubGlobal("ResizeObserver",class {observe(){}disconnect(){}});vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({kind:"loopback"}))));Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText}});});
+afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.unstubAllGlobals();});
+it("reuses Reply, React and Copy for a social card with its logo and original destination",async()=>{
+ const reply=vi.fn();
+ const content={channel:"social",platform:"instagram",account:"Example business",conversation:"Example client",replyToId:"inbound-1",kind:"message",sourceUrl:"https://www.instagram.com/direct/inbox/",text:"Human-reviewed social reply."};
+ fixture.api.mockImplementation(async(path:string)=>path.endsWith("/reactions")?{message:{...message,reactions:[{emoji:"❤️",by:"user",at:1}]}}:{draft:{id:message.replyDraftId,revision:1,state:"draft",content,inbound:{sender:"Example client",text:"Can you help?",attachments:[]}},hash:"a".repeat(64)});
+ await act(async()=>{root.render(createElement(RichMessageRow,{botId:"bot-1",botName:"Example",threadId:"thread-1",message,canReact:true,onReply:reply}));});
+ expect(host.querySelector('img[src="/app-logos/instagram.svg"]')).not.toBeNull();
+ expect(host.textContent).toContain("Example client");
+ expect(host.querySelector('a[href="https://www.instagram.com/direct/inbox/"]')).not.toBeNull();
+ const button=(label:string)=>host.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+ await act(async()=>button("Reply to message").click());
+ expect(reply).toHaveBeenCalledWith(expect.objectContaining({id:message.id,text:content.text}));
+ await act(async()=>button("Copy message").click());
+ expect(writeText).toHaveBeenCalledWith(content.text);
+ await act(async()=>button("Add reaction").click());
+ await act(async()=>button("Heart").click());
+ expect(fixture.api).toHaveBeenCalledWith('/api/threads/thread-1/messages/message-1/reactions',expect.objectContaining({method:"POST",body:JSON.stringify({emoji:"❤️",on:true})}));
+ expect([...host.querySelectorAll("button")].find(button=>button.textContent==="Send")?.disabled).toBe(true);
+ expect(fixture.api.mock.calls.some(([path])=>String(path).endsWith("/send"))).toBe(false);
+});
