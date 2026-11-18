@@ -45,3 +45,7 @@ The composer now renders a signature below the reply body and above Send. Paste 
 HTML is sanitized server-side using sanitize-html, previewed in a sandboxed CSP iframe, and included in outgoing multipart HTML with a plain-text alternative. The send hash includes the signature. A synthetic example is added only to existing unsendable staging preview email drafts.
 
 Provider settings lookup is still unavailable: no Gmail/Outlook OAuth signature-settings adapter is wired. The UI explicitly says default signature unavailable until a signature is saved. Do not describe this as automatic retrieval from Gmail/Outlook. The earlier not-implemented note describes the provider lookup gap; local account default retrieval and signature preview/send are now implemented.
+
+
+## Provider branding and composer palette
+Gmail/Outlook headers use local provider logos. Native mailbox IMAP/SMTP metadata takes priority, including custom business domains; known public addresses are a fallback when server metadata is unavailable. Unknown mail providers keep the Mail envelope. Slack keeps its logo. Reply cards now use the requested charcoal background, lighter message surface, gray labels, and white Send button. The signature preview uses the same dark background. Styling is scoped to reply cards.

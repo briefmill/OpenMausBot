@@ -1,16 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEventHandler } from "react";
 import { Check, ChevronDown, Loader2, Mail } from "lucide-react";
+import { emailProvider, type EmailProvider } from "../../shared/email-provider";
 import type { MessageAttachmentContext } from "./AttachmentPreview";
 import { AttachmentGallery } from "./AttachmentGallery";
 import { api } from "@/state/store";
 import type { ReplyContent, ReplyDraft } from "../../shared/reply-draft";
 
-type Answer={draft:ReplyDraft;hash:string};
+type Answer={draft:ReplyDraft;hash:string;emailProvider?:EmailProvider};
 const field="w-full rounded-lg border border-hairline/50 bg-inset px-3 py-2 text-[13px] text-ink outline-none focus:border-accent";
 function SignaturePreview({html}:{html:string}) {
  const [height,setHeight]=useState(60);const observer=useRef<ResizeObserver|undefined>(undefined);
  useEffect(()=>()=>observer.current?.disconnect(),[]);
- return <iframe title="Email signature preview" sandbox="allow-same-origin" referrerPolicy="no-referrer" className="w-full rounded-lg border-0 bg-white" style={{height}} onLoad={event=>{observer.current?.disconnect();const body=event.currentTarget.contentDocument?.body;if(!body)return;const resize=()=>setHeight(Math.min(320,Math.max(44,Math.ceil(body.getBoundingClientRect().height)+16)));resize();observer.current=new ResizeObserver(resize);observer.current.observe(body);}} srcDoc={`<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><meta name="referrer" content="no-referrer"><style>body{margin:8px;font:13px sans-serif;overflow-wrap:anywhere}img{max-width:100%;height:auto}a{color:#2563eb}</style>${html}`}/>;
+ return <iframe title="Email signature preview" sandbox="allow-same-origin" referrerPolicy="no-referrer" className="w-full rounded-lg border-0 bg-transparent" style={{height}} onLoad={event=>{observer.current?.disconnect();const body=event.currentTarget.contentDocument?.body;if(!body)return;const resize=()=>setHeight(Math.min(320,Math.max(44,Math.ceil(body.getBoundingClientRect().height)+16)));resize();observer.current=new ResizeObserver(resize);observer.current.observe(body);}} srcDoc={`<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"><meta name="referrer" content="no-referrer"><style>body{margin:8px;font:13px sans-serif;color:#d4d4d4;overflow-wrap:anywhere}img{max-width:100%;height:auto}a{color:#bdbdbd}</style>${html}`}/>;
 }
 function ReplyBody({value,disabled,onChange,onPaste,label="Reply message"}:{value:string;disabled:boolean;onChange:(value:string)=>void;onPaste?:ClipboardEventHandler<HTMLTextAreaElement>;label?:string}) {
  const ref=useRef<HTMLTextAreaElement>(null);
@@ -51,8 +52,10 @@ export function ReplyComposer({id,viewOnly=false,message}:{id:string;viewOnly?:b
  const email=content.channel==="email";const locked=viewOnly||busy||saved.draft.state!=="draft";const patch=(values:Partial<ReplyContent>)=>{setContent({...content,...values} as ReplyContent);if(!error.includes("another device"))setError("");};
  const senderChanged=content.channel==="email"&&saved.draft.content.channel==="email"&&content.from.toLowerCase()!==saved.draft.content.from.toLowerCase();
  const addresses=(value:string)=>value.split(",").map(item=>item.trimStart());
- return <section aria-label={email?"Email reply composer":"Slack reply composer"} className="w-full max-w-[640px] overflow-hidden rounded-2xl bg-composer p-4 text-ink ring-1 ring-composer-ring">
-  <header className="mb-3 flex items-center gap-2 text-[14px] font-medium"><span className="flex size-5 shrink-0 items-center justify-center">{email?<Mail size={18} aria-hidden="true"/>:<img src="/app-logos/slack.svg" alt="" width={18} height={18}/>}</span>{email?"Email":"Slack"}<span className="ml-auto text-[12px] text-ink-secondary">{dirty?"Unsaved changes":saved.draft.state==="draft"?"Draft saved":saved.draft.state.replaceAll("_"," ")}</span></header>
+ const provider=content.channel==="email"?(!senderChanged&&saved.emailProvider||emailProvider(content.from)):"slack";
+ const providerLabel=provider==="gmail"?"Gmail":provider==="outlook"?"Outlook":provider==="slack"?"Slack":"Mail";
+ return <section aria-label={email?"Email reply composer":"Slack reply composer"} className="reply-composer w-full max-w-[640px] overflow-hidden rounded-2xl bg-composer p-4 text-ink ring-1 ring-composer-ring">
+  <header className="mb-3 flex items-center gap-2 text-[14px] font-medium"><span className="flex size-5 shrink-0 items-center justify-center">{provider==="email"?<Mail size={18} aria-hidden="true"/>:<img src={`/app-logos/${provider}.svg`} alt="" width={18} height={18}/>}</span>{providerLabel}<span className="ml-auto text-[12px] text-ink-secondary">{dirty?"Unsaved changes":saved.draft.state==="draft"?"Draft saved":saved.draft.state.replaceAll("_"," ")}</span></header>
   {saved.draft.preview&&<p className="mb-3 text-[12px] text-ink-secondary">Synthetic preview · sending disabled</p>}
   {saved.draft.inbound&&<div className="mb-3 space-y-2 border-b border-hairline/50 pb-3">
    <div className="text-[12px] text-ink-secondary">Inbound message · <span className="font-medium text-ink">{saved.draft.inbound.sender}</span> · {saved.draft.inbound.sentAt} · copied by bot</div>
@@ -90,7 +93,7 @@ export function ReplyComposer({id,viewOnly=false,message}:{id:string;viewOnly?:b
    </div>}
    {saved.draft.deliveryError&&<p role="alert" className="mt-3 text-[13px] text-danger">{saved.draft.deliveryError}</p>}
    {saved.draft.state==="delivery_unknown"&&<p role="alert" className="mt-3 text-[13px] text-warning">Delivery could not be confirmed. Check the destination before preparing another reply. Automatic retry is disabled.</p>}
-   {!viewOnly&&saved.draft.state==="draft"&&<footer className="mt-3 flex flex-wrap items-center justify-end gap-3"><button disabled={busy} onClick={()=>void run("discard")} className="text-[13px] text-ink-secondary">Discard</button><button disabled={busy||!dirty||error.includes("another device")} onClick={()=>void run("save")} className="rounded-full border border-hairline px-4 py-2 text-[13px]">Save draft</button><button disabled={Boolean(saved.draft.preview)||senderChanged||busy||!content.text.trim()||Boolean(error)} onClick={()=>void run("send")} className="flex items-center gap-2 rounded-full bg-accent px-5 py-2 text-[13px] font-medium text-white">{busy&&<Loader2 size={14} className="animate-spin"/>}Send</button></footer>}
+   {!viewOnly&&saved.draft.state==="draft"&&<footer className="mt-3 flex flex-wrap items-center justify-end gap-3"><button disabled={busy} onClick={()=>void run("discard")} className="text-[13px] text-ink-secondary">Discard</button><button disabled={busy||!dirty||error.includes("another device")} onClick={()=>void run("save")} className="rounded-full border border-hairline px-4 py-2 text-[13px]">Save draft</button><button disabled={Boolean(saved.draft.preview)||senderChanged||busy||!content.text.trim()||Boolean(error)} onClick={()=>void run("send")} className="flex items-center gap-2 rounded-full reply-send px-5 py-2 text-[13px] font-medium">{busy&&<Loader2 size={14} className="animate-spin"/>}Send</button></footer>}
   </>}
   {error&&<div role="alert" className="mt-3 text-[13px] text-danger">{error}<button onClick={()=>void load()} className="ml-2 underline">Reload draft</button></div>}
  </section>;

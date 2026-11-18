@@ -3641,3 +3641,15 @@ button:disabled.bg-danger {
   from { opacity: 0; transform: translateX(-0.375rem); }
   to { opacity: 1; transform: translateX(0); }
 }
+
+.reply-composer {
+  --color-composer: #1f1f1f;
+  --color-composer-ring: #292929;
+  --color-inset: #292929;
+  --color-ink: #e7e7e7;
+  --color-ink-secondary: #a3a3a3;
+  --color-hairline: #383838;
+}
+.reply-composer .reply-send { background: #f3f3f3; color: #171717; }
+.reply-composer .reply-send:hover:not(:disabled) { background: #fff; }
+.reply-composer .reply-send:disabled { background: #363636; color: #a3a3a3; }

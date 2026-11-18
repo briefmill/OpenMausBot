@@ -11,12 +11,14 @@ const browser=(...args:string[])=>agentBrowser(binary,env,args);
 try {
  const api=fixtureApi(fixture.info.url);const {bot}=await api("POST","/api/bots",{name:"Composer fixture"});
  const store=new ReplyDraftStore(join(fixture.info.dataDir,"reply-drafts"));
- const draft=store.create(bot.id,bot.threadId,{channel:"email",from:"team@example.com",to:["client@example.com"],cc:[],bcc:[],subject:"Re: Screenshot review",text:"Thanks. I’ll check the field mapping and report back.",mailbox:"INBOX",signature:{text:"Alex Example\nExample Company",html:"<strong>Alex Example</strong><br>Example Company"}},undefined,{sender:"Example client",sentAt:"Today 10:13 AM",text:"The form answers are missing. Can you check the attached screenshot?",interpretation:"The client may be reporting missing field mapping. That needs verification.",attachments:[]});
+ const draft=store.create(bot.id,bot.threadId,{channel:"email",from:"preview@gmail.com",to:["client@example.com"],cc:[],bcc:[],subject:"Re: Screenshot review",text:"Thanks. I’ll check the field mapping and report back.",mailbox:"INBOX",signature:{text:"Alex Example\nExample Company",html:"<strong>Alex Example</strong><br>Example Company"}},undefined,{sender:"Example client",sentAt:"Today 10:13 AM",text:"The form answers are missing. Can you check the attached screenshot?",interpretation:"The client may be reporting missing field mapping. That needs verification.",attachments:[]});
  preview=await mountPreview(fixture,{entry:"/scripts/testing/reply-composer-preview.tsx",route:"/reply-preview",title:"Reply composer fixture"});
  await browser("open",`${preview.previewUrl}?draft=${draft.id}`);
  await browser("wait","--text","Inbound message");
  assert.equal((await browser("eval",`Boolean(document.querySelector('iframe[title="Email signature preview"]'))`)).result,true);
  const first=await browser("snapshot","-i");console.log(JSON.stringify(first));
+ assert.ok(JSON.stringify(first).includes("Gmail"));
+ assert.equal((await browser("eval",`getComputedStyle(document.querySelector(".reply-send")).backgroundColor`)).result,"rgb(243, 243, 243)");
  assert.ok(!Object.values(first.refs as Record<string,{name:string;role:string}>).some(value=>value.name==="From"&&value.role==="textbox"));
  const height=async()=>Number((await browser("eval","document.querySelector('textarea[aria-label=\"Reply message\"]').getBoundingClientRect().height")).result);
  const short=await height();assert.ok(short<100,`Short draft too tall: ${short}`);
