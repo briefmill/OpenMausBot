@@ -3,13 +3,20 @@ import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } fr
 const PANEL_WIDTH_KEY = "omb-computer-panel-width";
 export const PANEL_MIN_WIDTH = 360;
 export const PANEL_MAX_WIDTH = 1248;
+const BROWSER_PANEL_MAX_WIDTH = 1920;
+
+export function computerPanelWidthLimit(viewportWidth: number, browser: boolean) {
+  if (!browser) return PANEL_MAX_WIDTH;
+  // Keep room for the sidebar and chat, even on a smaller desktop.
+  return Math.max(PANEL_MIN_WIDTH, Math.min(BROWSER_PANEL_MAX_WIDTH, Math.floor(viewportWidth * .7), viewportWidth - 680));
+}
 const PANEL_DEFAULT_WIDTH = 400;
 const PANEL_RESIZE_STEP = 40;
 
 function readPanelWidth(): number {
   try {
     const stored = Number(localStorage.getItem(PANEL_WIDTH_KEY));
-    if (Number.isFinite(stored) && stored >= PANEL_MIN_WIDTH && stored <= PANEL_MAX_WIDTH) return stored;
+    if (Number.isFinite(stored) && stored >= PANEL_MIN_WIDTH && stored <= BROWSER_PANEL_MAX_WIDTH) return stored;
   } catch {
   }
   return PANEL_DEFAULT_WIDTH;
@@ -17,8 +24,16 @@ function readPanelWidth(): number {
 
 /** The computer panel's drag edge: a pointer drag or the arrow keys resize the
  * panel, and the width is remembered across opens. */
-export function useComputerPanelResize() {
-  const [panelWidth, setPanelWidth] = useState(readPanelWidth);
+export function useComputerPanelResize(browser = false) {
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const resize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+  const maxWidth = computerPanelWidthLimit(viewportWidth, browser);
+  const [preferredWidth, setPanelWidth] = useState(readPanelWidth);
+  const panelWidth = Math.min(preferredWidth, maxWidth);
   const resizeFrom = useRef<{ x: number; width: number } | null>(null);
   const persistPanelWidth = (width: number) => {
     try {
@@ -32,7 +47,7 @@ export function useComputerPanelResize() {
   };
   const onResizeMove = (event: PointerEvent<HTMLDivElement>) => {
     if (!resizeFrom.current) return;
-    const next = Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, resizeFrom.current.width + (resizeFrom.current.x - event.clientX)));
+    const next = Math.min(maxWidth, Math.max(PANEL_MIN_WIDTH, resizeFrom.current.width + (resizeFrom.current.x - event.clientX)));
     setPanelWidth(next);
   };
   const onResizeEnd = (event: PointerEvent<HTMLDivElement>) => {
@@ -43,7 +58,7 @@ export function useComputerPanelResize() {
   };
   const onResizeBy = (delta: number) => {
     setPanelWidth((current) => {
-      const next = Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, current + delta));
+      const next = Math.min(maxWidth, Math.max(PANEL_MIN_WIDTH, Math.min(current, maxWidth) + delta));
       persistPanelWidth(next);
       return next;
     });
@@ -66,5 +81,5 @@ export function useComputerPanelResize() {
     event.preventDefault();
     onResizeBy(widen);
   };
-  return { panelWidth, separatorRef, separatorWidth, onSeparatorKeyDown, onResizeStart, onResizeMove, onResizeEnd };
+  return { panelWidth, maxWidth, separatorRef, separatorWidth, onSeparatorKeyDown, onResizeStart, onResizeMove, onResizeEnd };
 }
