@@ -4,8 +4,7 @@ import { withOpenSettings } from "@/components/OpenSystemSettings";
 import { useStoreSelector } from "@/state/store-select";
 import { t } from "./i18n";
 import { playDictationCue } from "./dictation-cue";
-import { fishSpeech } from "./fish-speech";
-import { composerDictationReady, composerSpeechBridge } from "./speech";
+import { composerDictationReady, composerSpeechBridge, recordsClips } from "./speech";
 
 export function useComposerDictation({ draftId, text, onText }: {
   draftId: string;
@@ -13,7 +12,10 @@ export function useComposerDictation({ draftId, text, onText }: {
   onText: (text: string) => void;
 }) {
   const { capabilities } = useDesktopCapabilities();
-  const ready = composerDictationReady(capabilities, useStoreSelector((state) => state.config));
+  const config = useStoreSelector((state) => state.config);
+  const ready = composerDictationReady(capabilities, config);
+  const configNow = useRef(config);
+  configNow.current = config;
   const [recording, setRecording] = useState(false);
   const [speechError, setSpeechError] = useState<ReactNode>(null);
   const draft = useRef({ id: draftId, text });
@@ -29,7 +31,7 @@ export function useComposerDictation({ draftId, text, onText }: {
 
   useEffect(() => {
     if (!recording) return;
-    const bridge = composerSpeechBridge();
+    const bridge = composerSpeechBridge(configNow.current);
     if (!bridge || session.current.draftId !== draftId) {
       setRecording(false);
       return;
@@ -50,7 +52,7 @@ export function useComposerDictation({ draftId, text, onText }: {
       setRecording(false);
     };
     cancel.current = cancelSession;
-    finish.current = bridge === fishSpeech ? () => { void fishSpeech.speechFinish(); void playDictationCue("finish"); } : null;
+    finish.current = recordsClips(bridge) ? () => { void bridge.speechFinish?.(); void playDictationCue("finish"); } : null;
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || !active) return;
       event.preventDefault(); event.stopImmediatePropagation(); cancelSession(true);
@@ -101,7 +103,7 @@ export function useComposerDictation({ draftId, text, onText }: {
   }, [recording, draftId, onText]);
 
   const toggle = () => {
-    if (!ready || !composerSpeechBridge()) {
+    if (!ready || !composerSpeechBridge(config)) {
       setSpeechError(t("composer.dictation.unavailable"));
     } else if (recording) {
       if (finish.current) finish.current();

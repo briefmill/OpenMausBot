@@ -263,7 +263,7 @@ export function ComputerPanel({
   const androidConnected = androidStatus.devices.length > 0;
   const panelTabs = computerPanelTabs({ advanced, androidConnected });
   const panelView = resolveComputerPanelView(storedPanelView, { advanced, androidConnected });
-  const { panelWidth, maxWidth, separatorRef, separatorWidth, onSeparatorKeyDown, onResizeStart, onResizeMove, onResizeEnd } = useComputerPanelResize(panelView === "browser");
+  const { panelWidth, maxWidth, separatorRef, separatorWidth, onSeparatorKeyDown, onResizeStart, onResizeMove, onResizeEnd } = useComputerPanelResize();
   const panelRef = useComputerPanelEntry(profileBot.id, panelView);
   const browserAvailableHere = browserAvailable(state.config);
   const browserEnabled = builtInBrowserEnabled(state.config) && bot.browser !== false
