@@ -3630,3 +3630,14 @@ button:disabled.bg-danger {
   -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
   mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
 }
+
+@media (prefers-reduced-motion: no-preference) {
+  .chat-run-log-actions {
+    animation: chat-run-log-reveal 160ms ease-out both;
+  }
+}
+
+@keyframes chat-run-log-reveal {
+  from { opacity: 0; transform: translateX(-0.375rem); }
+  to { opacity: 1; transform: translateX(0); }
+}
