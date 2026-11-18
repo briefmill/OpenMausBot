@@ -16,6 +16,11 @@ function stop(code){if(closing)return;closing=true;for(const child of children)c
 const app=spawn(process.execPath,['/app/dist-server/server-launcher.js'],{uid,gid,stdio:['pipe','inherit','inherit'],env:{...process.env,OMB_CLI_OWNER_STDIN:'1'}});children.push(app);app.stdin.on('error',()=>{});app.stdin.end(owner+'\n');app.on('exit',code=>stop(code??1));
 for(let i=0;i<180&&!fs.existsSync('/tmp/omb-edge/http.sock');i++)await new Promise(resolve=>setTimeout(resolve,500));
 if(!fs.existsSync('/tmp/omb-edge/http.sock'))throw Error('Staging application socket did not open');
+let healthy=false;
+for(let attempt=0;attempt<180&&!healthy;attempt++){
+ try{await new Promise((resolve,reject)=>{const request=http.get({socketPath:'/tmp/omb-edge/http.sock',path:'/api/health',headers:{host:'127.0.0.1:8799'}},response=>{response.resume();response.on('end',()=>response.statusCode===200?resolve():reject(Error('Not ready')));});request.on('error',reject);request.setTimeout(1000,()=>request.destroy(Error('Not ready')));});healthy=true;}catch{await new Promise(resolve=>setTimeout(resolve,500));}
+}
+if(!healthy)throw Error('Staging application health check did not become ready');
 const edge=spawn('/usr/local/bin/caddy',['run','--config','/app/railway/Caddyfile','--adapter','caddyfile'],{uid,gid,stdio:'inherit',env:process.env});children.push(edge);edge.on('exit',code=>stop(code??1));
 process.on('SIGTERM',()=>stop(0));process.on('SIGINT',()=>stop(0));
 const marker=data+'/.composer-pair-20261118-1';
