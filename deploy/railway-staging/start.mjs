@@ -23,7 +23,7 @@ for(let attempt=0;attempt<180&&!healthy;attempt++){
 if(!healthy)throw Error('Staging application health check did not become ready');
 const edge=spawn('/usr/local/bin/caddy',['run','--config','/app/railway/Caddyfile','--adapter','caddyfile'],{uid,gid,stdio:'inherit',env:process.env});children.push(edge);edge.on('exit',code=>stop(code??1));
 process.on('SIGTERM',()=>stop(0));process.on('SIGINT',()=>stop(0));
-const marker=data+'/.composer-pair-20261118-1';
+const marker=data+'/.composer-pair-20261118-2';
 if(!fs.existsSync(marker)){
  const pairing=await new Promise((resolve,reject)=>{const req=http.request({hostname:'127.0.0.1',port:8799,path:'/api/auth/pairing',method:'POST',headers:{host:'127.0.0.1:8799','content-type':'application/json','x-openmausbot-cli':'1','x-openmausbot-cli-owner':owner}},res=>{let text='';res.on('data',chunk=>{text+=chunk;if(text.length>16000)req.destroy(Error('Oversized pairing response'));});res.on('end',()=>{if(res.statusCode!==200)return reject(Error('Staging pairing request refused: '+res.statusCode));try{resolve(JSON.parse(text));}catch(error){reject(error);}});});req.on('error',reject);req.setTimeout(10000,()=>req.destroy(Error('Pairing request timed out')));req.end(JSON.stringify({scopes:['admin','client'],label:'Locksley staging desktop',ttlMs:600000}));});
  fs.writeFileSync(marker,'Pairing requested once\n',{mode:0o600});
