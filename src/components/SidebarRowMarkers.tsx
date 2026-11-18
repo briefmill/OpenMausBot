@@ -4,11 +4,11 @@ import { t } from "@/lib/i18n";
 /** The colour behind a Simple row, which the status dot on its avatar is ring-cut against. */
 export function rowSurface(selected: boolean): string {
   return selected
-    ? "[--row:var(--color-zinc-300)]"
+    ? "[--row:var(--color-raised)]"
     : "[--row:var(--color-panel)] max-md:[--row:var(--color-app)] hover:[--row:color-mix(in_srgb,var(--color-raised)_50%,var(--color-panel))]";
 }
 
-export const rowSelectedSurface = "bg-zinc-300 [--color-ink:var(--color-zinc-950)] [--color-ink-secondary:var(--color-zinc-700)] [--color-ink-tertiary:var(--color-zinc-700)]";
+export const rowSelectedSurface = "bg-raised";
 
 export type RowActivity = "working" | "failed" | "teammate" | "queued";
 
