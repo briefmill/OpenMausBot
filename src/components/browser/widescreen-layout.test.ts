@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { fitBrowserPage } from "./widescreen-layout";
 
 describe("docked browser widescreen layout", () => {
+  it("uses portrait, square and widescreen at the panel breakpoints", () => {
+    expect(fitBrowserPage(360, 900)).toEqual({ width: 360, height: 640 });
+    expect(fitBrowserPage(559, 1000)).toEqual({ width: 559, height: 994 });
+    expect(fitBrowserPage(560, 900)).toEqual({ width: 560, height: 560 });
+    expect(fitBrowserPage(879, 900)).toEqual({ width: 879, height: 879 });
+    expect(fitBrowserPage(880, 900)).toEqual({ width: 880, height: 495 });
+  });
   it("uses panel width rather than filling a tall side panel", () => {
     expect(fitBrowserPage(960, 1600)).toEqual({ width: 960, height: 540 });
     expect(fitBrowserPage(1248, 1600)).toEqual({ width: 1248, height: 702 });

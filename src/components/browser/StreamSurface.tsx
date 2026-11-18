@@ -53,7 +53,8 @@ export type SurfaceConnect = (
   events: PreviewStreamEvents,
 ) => PreviewStreamClient;
 
-const RESIZE_THROTTLE_MS = 150;
+const RESIZE_SETTLE_MS = 150;
+const MAX_STREAM_PIXEL_RATIO = 1.25;
 // A recent probe answer near a new tap stands in for that tap's own answer, which on a slow link arrives after the tap ends.
 const PROBE_REUSE_PX = 24;
 const PROBE_REUSE_MS = 10_000;
@@ -300,7 +301,7 @@ export function StreamSurface(props: {
       capTimer = null;
       const size = sizeRef.current;
       if (!size) return;
-      const ratio = window.devicePixelRatio || 1;
+      const ratio = Math.min(window.devicePixelRatio || 1, MAX_STREAM_PIXEL_RATIO);
       const width = Math.round(size.width * ratio);
       const height = Math.round(size.height * ratio);
       const current = capRef.current;
@@ -322,13 +323,12 @@ export function StreamSurface(props: {
       // Outgrowing the cap restarts the screencast, so grow it once the size settles rather than on every throttled
       // resize of a drag.
       if (capTimer !== null) clearTimeout(capTimer);
-      capTimer = setTimeout(growCap, previous === null ? 0 : RESIZE_THROTTLE_MS * 2);
+      capTimer = setTimeout(growCap, previous === null ? 0 : RESIZE_SETTLE_MS);
     };
     const observer = new ResizeObserver(() => {
-      // A pending measure reads the latest size when it fires, so a drag resizes the page at most every
-      // RESIZE_THROTTLE_MS and still ends on the final size.
-      if (timer !== null) return;
-      timer = setTimeout(measure, sizeRef.current === null ? 0 : RESIZE_THROTTLE_MS);
+      // Keep painting the current stream while dragging. Resize Chrome once the panel settles.
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(measure, sizeRef.current === null ? 0 : RESIZE_SETTLE_MS);
     });
     observer.observe(element);
     return () => {
