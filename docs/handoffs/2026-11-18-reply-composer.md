@@ -30,3 +30,18 @@ Use the repository-pinned Node runtime. Unit tests:
 node node_modules/vitest/vitest.mjs run server/drivers/agents-catalog-wire.test.ts server/drivers/agents-call-cards.test.ts server/reply/store.test.ts server/reply/routes.test.ts src/lib/thread-preferences.test.ts src/components/SidebarBotListItem.test.ts src/components/SidebarBotListItem.expansion.test.ts src/components/ChatView.automation.test.ts
 node --experimental-strip-types scripts/testing/verify-reply-composer.ts
 ```
+
+## Signature preview requirement (user feedback)
+
+Display the sending account’s configured default reply signature below the editable reply body and above Discard/Save/Send, matching Grok Bot. Preserve its formatting, logo/photo and links; do not copy the external sender’s signature. Resolve it from the selected From account/alias, clear or reload it if From changes, and bind exactly the displayed signature into the reviewed send hash. Never synthesize a personal or business signature from memories.
+
+This is not implemented yet. Native IMAP/SMTP accounts currently expose address/server/password settings, not provider signatures; Gmail MCP-only send and settings adapters also remain outstanding. The Gmail connector exposed to this Codex session has no signature/settings tool. A provider-specific authenticated signature lookup must be added before claiming automatic signature retrieval. If unavailable, show that explicitly; do not claim a signature was loaded. Preview rich HTML through the same bounded sanitizer used for outgoing HTML; never execute signature scripts or silently fetch arbitrary image URLs. Synthetic staging examples may use clearly labeled example signatures, but must remain unsendable.
+
+
+## Signature preview implementation
+
+The composer now renders a signature below the reply body and above Send. Paste a signature copied from mail settings to retain rich formatting, HTTPS images and links, or enter plain text. Saving as the account default stores it with that connected native mailbox in the encrypted email store. Defaults auto-populate new drafts and existing unsigned drafts. Changing From clears the previous signature and requires Save before Send so the new account signature can be reviewed. Bots cannot supply an invented signature during prepare_reply: the server uses the account default.
+
+HTML is sanitized server-side using sanitize-html, previewed in a sandboxed CSP iframe, and included in outgoing multipart HTML with a plain-text alternative. The send hash includes the signature. A synthetic example is added only to existing unsendable staging preview email drafts.
+
+Provider settings lookup is still unavailable: no Gmail/Outlook OAuth signature-settings adapter is wired. The UI explicitly says default signature unavailable until a signature is saved. Do not describe this as automatic retrieval from Gmail/Outlook. The earlier not-implemented note describes the provider lookup gap; local account default retrieval and signature preview/send are now implemented.

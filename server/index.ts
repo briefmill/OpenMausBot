@@ -1,4 +1,5 @@
 import { customMcpServers } from "./config.ts";
+import { emailReplyBody, sanitizeSignature } from "./reply/signature.ts";
 import { ReplyDraftStore, ReplyNotSent } from "./reply/store.ts";
 import { replyContentSchema, replyInboundSchema } from "../shared/reply-draft.ts";
 import { createReplyDraftRoutes } from "./routes/reply-drafts.ts";
@@ -9194,11 +9195,13 @@ const outsideWrites = createOutsideWrites({ store, notify, language: (threadId) 
   writeMemory: (botId, threadId, change) => { const written = botMemoryUpdate(teamHost.layer(botId, threadId), change, { source: memorySourceLabel({ room: store.groupByThread(threadId), task: store.taskByThread(teamHost.baseBotId(botId), threadId), threadId }), aboutMe: null, prefer: null }); return written.ok ? null : written.error; } });
 const replyDrafts = new ReplyDraftStore(join(DATA_DIR,"reply-drafts"));
 ROUTES.push(createReplyDraftRoutes({store:replyDrafts,
+ signature:from=>{const signature=emailService.store.get(from)?.signature;return signature?sanitizeSignature(signature):undefined;},
+ saveSignature:(from,signature)=>{const account=emailService.store.get(from);if(!account)throw new ReplyNotSent("Connect this sending mailbox before saving its default signature.");emailService.store.put({...account,signature:sanitizeSignature(signature)});},
  visible:(auth,botId,threadId)=>{const visible=visibleTo(viewerFor(auth));return visible.bot(botId)&&visible.thread(threadId)&&Boolean(connectorThread(botId,threadId));},
  deliver:async draft=>{
   if(draft.content.channel==="email") {
    const body=draft.content;
-   const result=await emailHost.handle({method:"tools/call",params:{name:"EMAIL_SEND_MESSAGE",arguments:{account:body.from,to:body.to,cc:body.cc,bcc:body.bcc,subject:body.subject,text:body.text,mailbox:body.mailbox,...(body.replyToUid?{reply_to_uid:body.replyToUid}:{})}}},{botId:draft.botId,threadId:draft.threadId},()=>{});
+   const result=await emailHost.handle({method:"tools/call",params:{name:"EMAIL_SEND_MESSAGE",arguments:{account:body.from,to:body.to,cc:body.cc,bcc:body.bcc,subject:body.subject,...emailReplyBody(body),mailbox:body.mailbox,...(body.replyToUid?{reply_to_uid:body.replyToUid}:{})}}},{botId:draft.botId,threadId:draft.threadId},()=>{});
    if(!("content" in result)||result.isError)throw new Error("Email delivery not confirmed");
    return {id:draft.id};
   }
@@ -13032,6 +13035,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if(content.channel==="email") {
           const access=emailAccess(internalSender,"EMAIL_SEND_MESSAGE");
           if(!access.ok||!emailService.store.get(content.from))return json(res,403,{error:"This bot needs a connected, permitted sending mailbox."});
+          content.signature=emailService.store.get(content.from)?.signature;
         }else{
           const remote=await frontDeskDraftRequest(content.frontDeskDraftId,"GET");
           const allowed=Object.values(customMcpServers(cfg,internalSender.mcpServers,internalSender.id)).some(server=>"url" in server&&typeof server.url==="string"&&server.url.startsWith("https://watcher-production-86cc.up.railway.app/mcp/scoped/"+String(remote.scope))&&new URL(server.url).pathname.endsWith("/"+String(remote.scope)));

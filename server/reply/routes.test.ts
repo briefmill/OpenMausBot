@@ -29,3 +29,21 @@ it("only lets an owner review and send a visible draft, using exactly saved cont
  expect((await request(owner,"POST",{revision:saved.body.draft.revision,hash:saved.body.hash},"/send")).body.draft.state).toBe("sent");
  expect(delivered).toEqual(["Human edited"]);
 });
+
+it("loads defaults for the selected sender and never carries another account's signature",async()=>{
+ const dir=mkdtempSync(join(tmpdir(),"reply-signature-route-"));dirs.push(dir);const store=new ReplyDraftStore(dir);
+ const draft=store.create("bot","thread",{channel:"email",from:"first@example.com",to:["client@example.com"],cc:[],bcc:[],subject:"Test",text:"Reviewed",mailbox:"INBOX"});
+ const defaults:Record<string,{text:string}>={"first@example.com":{text:"First business"},"second@example.com":{text:"Second business"}};
+ const route=createReplyDraftRoutes({store,visible:()=>true,signature:from=>defaults[from],saveSignature:(from,signature)=>{defaults[from]=signature;},deliver:async()=>({id:"unused"})});
+ async function request(method:string,body:unknown={}){
+  let answer:{status:number;body:any}|undefined;
+  await route({path:`/api/reply-drafts/${draft.id}`,method,auth:{kind:"loopback",scopes:["admin","client"]},req:{headers:{"content-type":"application/json"}},res:{setHeader(){}},readBody:async()=>body,json:(_res:unknown,status:number,body:unknown)=>{answer={status,body};}} as unknown as RouteContext);return answer!;
+ }
+ const loaded=await request("GET");expect(loaded.body.draft.content.signature.text).toBe("First business");
+ const second=await request("PATCH",{revision:loaded.body.draft.revision,content:{...loaded.body.draft.content,from:"second@example.com"}});
+ expect(second.body.draft.content.signature.text).toBe("Second business");
+ const saved=await request("PATCH",{revision:second.body.draft.revision,content:{...second.body.draft.content,signature:{text:"Updated second"}},saveSignature:true});
+ expect(saved.status).toBe(200);expect(defaults["second@example.com"]?.text).toBe("Updated second");expect(defaults["first@example.com"]?.text).toBe("First business");
+ const third=await request("PATCH",{revision:saved.body.draft.revision,content:{...saved.body.draft.content,from:"third@example.com"}});
+ expect(third.body.draft.content.signature).toBeUndefined();
+});

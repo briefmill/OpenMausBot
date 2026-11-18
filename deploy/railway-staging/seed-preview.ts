@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { Store } from "../../server/store.ts";
 import { ReplyDraftStore } from "../../server/reply/store.ts";
@@ -18,4 +18,13 @@ if(!existsSync(marker)){
  }
  writeFileSync(marker,"Preview seeded\n",{mode:0o600});closeMessageDb();
  console.log("Synthetic composer previews added; sending disabled.");
+}
+
+const previewSignatures=join(dir,"reply-drafts");
+if(existsSync(previewSignatures))for(const name of readdirSync(previewSignatures)){
+ if(!name.endsWith(".json"))continue;
+ const path=join(previewSignatures,name);const draft=JSON.parse(readFileSync(path,"utf8"));
+ if(!draft.preview||draft.content?.channel!=="email"||draft.content.signature!==undefined)continue;
+ draft.content.signature={text:"Alex Example\nClient Services · Example Company\nteam@example.com",html:'<table><tr><td><strong style="font-size:18px">EXAMPLE</strong></td><td><strong>Alex Example</strong><br>Client Services<br>Example Company<br><a href="mailto:team@example.com">team@example.com</a></td></tr></table>'};
+ draft.revision++;writeFileSync(path+".tmp",JSON.stringify(draft),{mode:0o600});renameSync(path+".tmp",path);
 }

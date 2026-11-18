@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { replyInboundSchema, replyContentSchema, type ReplyContent, type ReplyDraft } from "../../shared/reply-draft.ts";
+import { sanitizeReplyContent } from "./signature.ts";
 export class ReplyNotSent extends Error {}
 export class DraftConflict extends Error { status=409; }
 export class ReplyDraftStore {
@@ -11,9 +12,9 @@ export class ReplyDraftStore {
   private path(id:string) { if(!/^[a-f0-9-]{36}$/.test(id)) throw Object.assign(new Error("Draft not found"),{status:404}); return join(this.directory,id+".json"); }
   private save(draft:ReplyDraft) { const file=this.path(draft.id),temp=file+"."+randomUUID()+".tmp";writeFileSync(temp,JSON.stringify(draft),{mode:0o600});renameSync(temp,file);return draft; }
   read(id:string):ReplyDraft { try {const draft:ReplyDraft=JSON.parse(readFileSync(this.path(id),"utf8"));if(draft.state==="sending"&&!this.inFlight.has(id)){draft.state="delivery_unknown";draft.revision++;draft.updatedAt=Date.now();this.save(draft);}return draft;}catch(error){if((error as NodeJS.ErrnoException).code==="ENOENT")throw Object.assign(new Error("Draft not found"),{status:404});throw error;} }
-  create(botId:string,threadId:string,content:ReplyContent,destination?:ReplyDraft["destination"],inbound?:ReplyDraft["inbound"]):ReplyDraft { const now=Date.now();return this.save({id:randomUUID(),botId,threadId,content:replyContentSchema.parse(content),destination,inbound:inbound?replyInboundSchema.parse(inbound):undefined,state:"draft",revision:1,createdAt:now,updatedAt:now}); }
+  create(botId:string,threadId:string,content:ReplyContent,destination?:ReplyDraft["destination"],inbound?:ReplyDraft["inbound"]):ReplyDraft { const now=Date.now();return this.save({id:randomUUID(),botId,threadId,content:sanitizeReplyContent(replyContentSchema.parse(content)),destination,inbound:inbound?replyInboundSchema.parse(inbound):undefined,state:"draft",revision:1,createdAt:now,updatedAt:now}); }
   edit(id:string,revision:number,content?:ReplyContent,discard=false) {const draft=this.read(id);if(draft.revision!==revision||draft.state!=="draft")throw new DraftConflict("Draft changed on another device or is no longer editable. Reload it before continuing.");
-    if(content){const parsed=replyContentSchema.parse(content);if(parsed.channel!==draft.content.channel)throw new DraftConflict("The delivery service cannot change.");if(parsed.channel==="slack"&&draft.content.channel==="slack"&&parsed.frontDeskDraftId!==draft.content.frontDeskDraftId)throw new DraftConflict("The Slack destination cannot change.");draft.content=parsed;}
+    if(content){const parsed=replyContentSchema.parse(content);if(parsed.channel!==draft.content.channel)throw new DraftConflict("The delivery service cannot change.");if(parsed.channel==="slack"&&draft.content.channel==="slack"&&parsed.frontDeskDraftId!==draft.content.frontDeskDraftId)throw new DraftConflict("The Slack destination cannot change.");draft.content=sanitizeReplyContent(parsed);}
     draft.revision++;draft.updatedAt=Date.now();if(discard)draft.state="discarded";return this.save(draft);
   }
   async send(id:string,revision:number,hash:string,deliver:(draft:ReplyDraft)=>Promise<NonNullable<ReplyDraft["receipt"]>>) {
