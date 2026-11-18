@@ -20,7 +20,7 @@ Branch: `codex/reply-composer`, based on `codex/staging-browser-verified` (7d0f5
 - Native email sending uses the existing connected IMAP/SMTP email host and rechecks its policy; Gmail/Outlook MCP-only accounts need a separate adapter. No real mailbox delivery was qualified.
 - Qualify the full active-turn tool → transcript card → source-file preview path and multi-device conflict UI before enabling bots to routinely prepare these cards. The browser fixture seeds a synthetic draft directly.
 - Integrate the sidebar switch into the newest production Chat activity menu without dropping its Tool activity control; this branch starts from verified staging, while production has additional menu changes.
-- No deployment, desktop installation, or production configuration changes were made in this implementation session.
+- Staging deployed on November 18: deployment `ba7b63f3-176a-4671-bf05-e1789f5e649b`, source `9669ca09d`. Public health passed and renderer entry asset matched the local build. The staging-only launcher seeds a Reply composer preview bot with synthetic email/Slack drafts; Send is disabled in the UI and rejected by the server for these drafts. Pairing codes are not stored in this document. Production was not deployed or reconfigured.
 
 ## Commands
 
