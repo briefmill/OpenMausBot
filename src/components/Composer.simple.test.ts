@@ -140,7 +140,7 @@ describe("the Simple composer in a bot chat", () => {
     render({ bot });
     openPlus();
     click(item("teach"));
-    expect(container.querySelector("textarea")!.value).toBe("/learn how I file expenses");
+    expect(container.querySelector("textarea")!.value).toBe("/learn watch me how I file expenses");
   });
 
   it("opens the file picker straight from the + when attaching is its only row", () => {
@@ -311,7 +311,7 @@ describe("the Advanced composer", () => {
     const teach = container.querySelector<HTMLButtonElement>('button[aria-label="Teach a task"]');
     expect(teach).not.toBeNull();
     click(teach);
-    expect(container.querySelector("textarea")!.value).toBe("/learn how I file expenses");
+    expect(container.querySelector("textarea")!.value).toBe("/learn watch me how I file expenses");
   });
 
   it("leaves Teach a task out when skill authoring is off", () => {

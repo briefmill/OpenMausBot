@@ -148,6 +148,28 @@ suite("the v2 stream on real Chrome", () => {
     client.send({ type: "mouse", action: "up", x, y, button: "left", buttons: 0, clickCount: 1, modifiers: 0 });
   };
 
+  it("records teaching actions while the person controls the browser and stops on request", async () => {
+    await opened("/teach", `<!doctype html><input id="secret" type="password" style="position:absolute;left:20px;top:20px;width:200px;height:40px"><button id="save" style="position:absolute;left:20px;top:100px" onclick="fetch('/report.csv?token=private-token')">Save draft</button>`);
+    const client = await connect("width=1280&height=800&maxWidth=1280&maxHeight=800");
+    await takeControl(client);
+    client.send({ type: "teachStart" });
+    await until(() => client.messages.filter((m) => m.type === "teaching"), (messages) => messages.some((m) => (m.event as Record<string, unknown>)?.kind === "started"));
+    click(client, 40, 40);
+    client.send({ type: "text", text: "private-password" });
+    click(client, 40, 110);
+    await until(() => client.messages.filter((m) => m.type === "teaching").map((m) => m.event as Record<string, unknown>), (events) => events.some((event) => event.kind === "network"));
+    client.send({ type: "teachStop" });
+    await until(() => client.messages.filter((m) => m.type === "teaching"), (messages) => messages.some((m) => (m.event as Record<string, unknown>)?.kind === "stopped"));
+    const captured = client.messages.filter((m) => m.type === "teaching").map((m) => m.event as Record<string, unknown>);
+    expect(captured).toContainEqual(expect.objectContaining({ kind: "action", action: "mouse", target: expect.objectContaining({ id: "save", selector: "#save", label: "Save draft" }) }));
+    expect(JSON.stringify(captured)).not.toContain("private-password");
+    expect(JSON.stringify(captured)).not.toContain("private-token");
+    const count = captured.length;
+    click(client, 40, 110); await sleep(250);
+    expect(client.messages.filter((m) => m.type === "teaching")).toHaveLength(count);
+    await client.close();
+  }, hostTimeout(45_000));
+
   it("fills the panel: a 1600x1000 panel gets a 1600x1000 page and 3200x2000 frames on a 2x screen, and follows its resizes", async () => {
     await opened("/animated", ANIMATED);
     expect(await pageSize()).toEqual([1280, 800, 2]);
@@ -234,6 +256,28 @@ suite("the v2 stream on real Chrome", () => {
     expect(await pageSize()).toEqual([1000, 600, 3]);
     await pip.close();
     await panel.close();
+  }, hostTimeout(90_000));
+
+  it("shows an existing browser as a passive map preview without resizing or accepting input", async () => {
+    await opened("/map-preview", ANIMATED);
+    const before = await pageSize();
+    const preview = await connect("maxWidth=512&maxHeight=320&existingOnly=true&width=200&height=100");
+    await until(() => preview.frames.length, (count) => count >= 3);
+    expect(preview.frames.every((frame) => frame.width <= 512 && frame.height <= 320)).toBe(true);
+    expect(await pageSize()).toEqual(before);
+    expect(await preview.next("control")).toMatchObject({ canOperate: false });
+    preview.send({ type: "takeControl" });
+    preview.send({ type: "navigate", url: fx.page("/must-not-open", STILL) });
+    await sleep(500);
+    expect(await real.peek(target, "document.title")).toBe("animated");
+    expect(real.service.heldBy(target.session)).toBeNull();
+    await preview.close();
+    const profiles = real.service.profiles().length;
+    target = { session: "map-absent", key: "bot:map-absent" };
+    const absent = await connect("maxWidth=512&maxHeight=320&existingOnly=true");
+    await until(() => absent.socket.readyState, (state) => state === WebSocket.CLOSED);
+    expect(absent.frames).toHaveLength(0);
+    expect(real.service.profiles()).toHaveLength(profiles);
   }, hostTimeout(90_000));
 
   it("sends the page's file picker to the person holding the browser, and their files to the page", async () => {

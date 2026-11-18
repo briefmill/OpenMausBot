@@ -49,7 +49,7 @@ function heldUntilReleased(input: PreviewStreamInput): boolean {
 
 /**
  * A person's input takes the browser on its first press and hands it back after a few idle seconds, unless they keep
- * it. Never hands back while a key or button is held down: the server would then need a browser restart.
+ * it. Idle hand-back waits for input to lift. Explicit hand-back lets the server release any remaining input.
  */
 export function createBrowserControl(options: {
   transport: ControlTransport;
@@ -83,7 +83,7 @@ export function createBrowserControl(options: {
     if (isPress(input) && heldUntilReleased(input)) held.add(inputId(input));
     else if (isRelease(input)) held.delete(inputId(input));
   };
-  const quiet = () => !closed && !pinned && (soon || !kept) && !flushing && !held.size
+  const quiet = () => !closed && !pinned && (soon || !kept) && !flushing && (soon || !held.size)
     && (state === "held" || (state === "bot" && options.owned()));
   const arm = () => {
     clearTimeout(idle);
@@ -91,6 +91,7 @@ export function createBrowserControl(options: {
   };
   const release = () => {
     state = "releasing";
+    held.clear();
     if (status === "stale") report("");
     chain = chain.then(() => closed ? undefined : transport.release()).catch(() => {})
       .then(() => { if (state === "releasing") state = "bot"; });

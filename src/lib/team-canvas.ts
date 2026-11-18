@@ -50,7 +50,7 @@ export function teamSize(section: TeamMapSection): { width: number; height: numb
 export function layoutTeams(
   sections: TeamMapSection[],
   positions: Record<string, Point>,
-  options: { sizes?: ReadonlyArray<{ width: number; height: number }>; columns?: number } = {},
+  options: { sizes?: ReadonlyArray<{ width: number; height: number }>; columns?: number; avoidOverlap?: boolean } = {},
 ): Tile[] {
   const sizes = options.sizes ?? sections.map(teamSize);
   const columns = Math.max(1, Math.floor(options.columns ?? 2));
@@ -60,7 +60,7 @@ export function layoutTeams(
     columnX.push(columnX[column - 1] + previous + 56);
   }
   let y = 40;
-  return sections.map((section, index) => {
+  const tiles = sections.map((section, index) => {
     if (index > 0 && index % columns === 0) {
       y += Math.max(...sizes.slice(index - columns, index).map((size) => size.height)) + 56;
     }
@@ -72,6 +72,20 @@ export function layoutTeams(
       ...sizes[index],
     };
   });
+  if (!options.avoidOverlap) return tiles;
+  const placed: Tile[] = [];
+  for (const original of tiles) {
+    let tile = original;
+    for (let attempt = 0; attempt < tiles.length; attempt++) {
+      const collisions = placed.filter((other) => tile.x < other.x + other.width + 32 && tile.x + tile.width + 32 > other.x && tile.y < other.y + other.height + 32 && tile.y + tile.height + 32 > other.y);
+      if (!collisions.length) break;
+      const right = Math.max(...collisions.map((other) => other.x + other.width + 56));
+      const below = Math.max(...collisions.map((other) => other.y + other.height + 56));
+      tile = right - tile.x <= below - tile.y ? { ...tile, x: right } : { ...tile, y: below };
+    }
+    placed.push(tile);
+  }
+  return placed;
 }
 
 export function fitTeams(tiles: Tile[], width: number, height: number): View {

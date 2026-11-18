@@ -2393,7 +2393,7 @@ function cancelDirectTurnDispatch(botId: string, expectedThreadId?: string): Dir
 const {
   browserRuntime, browserLive, usedBrowserSessions, browserSweep, temporaryBrowserSessions,
   currentBrowserSession, forgetTemporaryBrowser, myChromeAvailable, usesMyChrome, lentChromeSummary, browserSessionSpec, browserIntegration,
-  browserReady, currentBrowserSpec, loginInput, browserSystemPrompt, closeBrowser, browserEngineSwitched, eraseDeletedBrowser, engineSummary, browserSessionsOf, signedInSitesTarget, uploadPaths, eraseAudienceBrowsers,
+  browserReady, currentBrowserSpec, loginInput, browserSystemPrompt, closeBrowser, browserEngineSwitched, eraseDeletedBrowser, engineSummary, engineBrowsers, browserSessionsOf, signedInSitesTarget, uploadPaths, eraseAudienceBrowsers,
 } = createBrowserHost({ cfg, language: appLanguage, store: () => store, turnResources, activeInternalGenerationByThread, mintInternalCapability, DESKTOP_MANAGED, CLOUD_HOME, HOSTED_WORKSPACE, PORT, engineMemory, audienceOf: teamHost.browserAudience, ...(CLOUD_TEAM ? { browserBox: (fd: number, ro: readonly string[]) => botBox.browserBox(fd, ro) } : {}), lendRefusal: (turn) => cloudLendingRefusal({ botId: store.botByThread(turn.threadId)?.id ?? "", threadId: turn.threadId, generation: turn.generation }), device: () => deviceLinks.route(CLOUD_HOME_LENDER) ?? sharedComputers.internetAway(CLOUD_HOME_LENDER) ?? { unshared: true as const }, lentChrome: CLOUD_PERSONAL ? { route: () => deviceLinks.chromeRoute(CLOUD_HOME_LENDER), lender: () => sharedComputers.chromeLender(CLOUD_HOME_LENDER) } : undefined });
 
 const dataSheets = new DataSheetRegistry({
@@ -14501,6 +14501,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const links = (state: "queued" | "running") =>
         handoffs.flatMap(({ state: edgeState, ...link }) => edgeState === state ? [link] : []);
       return json(res, 200, {
+        activeBrowsers: store.bots.filter((bot) => mapped.has(bot.id) && visible.thread(bot.threadId) && engineBrowsers.running(bot.threadId)).map((bot) => bot.id),
         collaborations,
         queued: links("queued"),
         running: links("running"),

@@ -1,4 +1,4 @@
-import { SAVE_RUN_AS_SKILL_LINE } from "../shared/learn-request.ts";
+import { SAVE_RUN_AS_SKILL_LINE, isBrowserDemonstration } from "../shared/learn-request.ts";
 
 export const LEARN_SOURCE_PREFIX = "learn:";
 export const LEARN_PROMPT_MARKER = "[/learn]";
@@ -62,6 +62,8 @@ export function buildLearnPrompt(userRequest: string): string {
 }
 
 export function expandLearnTurnText(userText: string): string {
+  if (isBrowserDemonstration(userText)) return `${LEARN_PROMPT_MARKER} The user is about to demonstrate a browser workflow: ${userText}
+Wait for the completed training evidence. Do not create or update a skill from this opening brief. Do not operate the browser while the user demonstrates. Acknowledge briefly, then end this turn. Do not claim recording is active; the browser recording indicator is the authority. When a completed recording arrives, use only its observed steps as evidence and identify any gaps.`;
   const learn = parseLearnCommand(userText) ?? parseSaveRunRequest(userText);
   return learn ? buildLearnPrompt(learn.request) : userText;
 }

@@ -102,6 +102,7 @@ const isPreviewStreamDialog = (value: unknown): value is PreviewStreamControl["d
 /** Client-to-server messages. Coordinates are page CSS px. */
 export type PreviewStreamInput =
   | { readonly type: "ombElementInspect"; readonly requestId: string; readonly x: number; readonly y: number; readonly capture: boolean; readonly document?: string }
+  | { readonly type: "teachStart" | "teachStop" }
   | { readonly type: "takeControl" }
   | { readonly type: "releaseControl" }
   | { readonly type: "dialog"; readonly accept: boolean; readonly promptText?: string }
@@ -242,6 +243,8 @@ export interface PreviewStreamTarget {
   readonly height?: number;
   /** Passive viewers reduce their own access, including automatic control grants. */
   readonly interactive?: boolean;
+  /** Watch an already running browser without starting one for the preview. */
+  readonly existingOnly?: boolean;
 }
 
 export interface PreviewStreamEvents {
@@ -303,6 +306,7 @@ export function createPreviewStreamClient(
       query.set("height", String(Math.round(size.height)));
     }
     if (target.interactive === false) query.set("interactive", "false");
+    if (target.existingOnly) query.set("existingOnly", "true");
     return withAccessQuery(`${target.access.wsBase}/stream?${query.toString()}`, target.access);
   };
   let stopped = false;

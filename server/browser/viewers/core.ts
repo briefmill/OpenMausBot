@@ -9,6 +9,7 @@ import { inspectBrowserElement } from "./inspect-element.ts";
 // resize instead of an emulated viewport, one control for the whole profile, a watching viewer may size the page, and
 // input held by a viewer that leaves is released at once.
 import { randomUUID } from "node:crypto";
+import { BrowserTeaching } from "./teaching.ts";
 
 import type { PointerReporter } from "../cdp/actions.ts";
 import type { AuthChallenge } from "../cdp/auth.ts";
@@ -55,6 +56,7 @@ export interface FrameMetadata {
 export type Controller = "agent" | "you" | "another-viewer" | "unclaimed";
 
 export type ViewerOutput =
+  | { type: "teaching"; event: Record<string, unknown> }
   | { type: "frame"; data: Buffer; metadata: FrameMetadata; still: boolean; ack: () => void }
   | { type: "viewport"; width: number; height: number; setting: ViewportSetting; zoom: number }
   | { type: "control"; canOperate: boolean; controller: Controller; held: boolean; owned: boolean; controlling: boolean; stale: boolean; generation: number; dialog: { type: string; message: string; defaultValue: string } | null }
@@ -133,6 +135,10 @@ const appliedKey = (size: { width: number; height: number }, zoom: number) => `$
 
 export class Viewer {
   readonly id = randomUUID();
+  readonly teaching = new BrowserTeaching((event) => {
+    if (this.controlState().controller !== "you") { this.teaching.stop(); return; }
+    this.push({ type: "teaching", event });
+  });
   readonly options: Required<Omit<ViewerOptions, "size">>;
   readonly #hub: ViewerHub;
   readonly #push: (output: ViewerOutput) => void;
@@ -141,6 +147,8 @@ export class Viewer {
   #session: CdpSession | null = null;
   #binding: Promise<void> = Promise.resolve();
   #params: Promise<void> = Promise.resolve();
+  #teachingInputs: Promise<void> = Promise.resolve();
+  #teachingRequested = false;
   #scale = 1;
   #framesInFlight = 0;
   #mayHaveDropped = false;
@@ -199,6 +207,7 @@ export class Viewer {
     if (this.closed || this.tab === tab && this.#session && !this.#session.detached) return;
     await this.#unbind();
     this.tab = tab;
+    if (tab) this.teaching.bind(tab.page);
     const browser = this.#hub.host.browser();
     if (!tab || !browser || tab.page.closed) return;
     let session: CdpSession;
@@ -391,11 +400,17 @@ export class Viewer {
     if (this.closed || !this.options.canOperate) return;
     const message = record(raw);
     if (!message) return;
-    try {
-      await this.#hub.input(this, message);
-    } catch {
-      this.#hub.broadcastControl();
-    }
+    const run = async () => {
+      if (this.closed) return;
+      try { await this.#hub.input(this, message); }
+      catch { this.#hub.broadcastControl(); }
+    };
+    if (message.type === "teachStart") this.#teachingRequested = true;
+    if (this.#teachingRequested || this.teaching.active || message.type === "teachStop") {
+      this.#teachingInputs = this.#teachingInputs.then(run);
+      await this.#teachingInputs;
+      if (message.type === "teachStop") this.#teachingRequested = false;
+    } else await run();
   }
 
   /** The tabs as they are now, as agent-browser's stream sent them after every change of the page. */
@@ -420,6 +435,7 @@ export class Viewer {
   }
 
   async teardown(): Promise<void> {
+    this.teaching.stop();
     this.closed = true;
     await this.#unbind();
   }
@@ -792,6 +808,7 @@ export class ViewerHub {
         return;
       }
       case "releaseControl": {
+        viewer.teaching.stop();
         const releasing = this.#hold.release(viewer);
         this.broadcastControl();
         await releasing.finally(() => this.broadcastControl());
@@ -823,12 +840,19 @@ export class ViewerHub {
         await viewer.setFrameCap(message.maxWidth, message.maxHeight);
         return;
     }
+    if (message.type === "teachStop") {
+      viewer.teaching.stop(); viewer.push({ type: "teaching", event: { kind: "stopped" } }); return;
+    }
     const tab = this.host.active();
     if (!tab || !this.#hold.controls(viewer)) {
       this.broadcastControl();
       return;
     }
     this.#hold.used();
+    if (message.type === "teachStart") {
+      viewer.teaching.start(); viewer.teaching.bind(tab.page); return;
+    }
+    await control.human(viewer.options.person, tab, () => viewer.teaching.input(tab.page, message));
     switch (message.type) {
       case "dialog":
         if (typeof message.accept === "boolean") await tab.page.answerDialog({ accept: message.accept, ...(typeof message.promptText === "string" ? { promptText: message.promptText.slice(0, 4_000) } : {}) });

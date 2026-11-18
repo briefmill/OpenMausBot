@@ -296,13 +296,13 @@ export class StreamV2 {
       maxWidth: intParam(params, "maxWidth", 1280, FRAME_CAP_LIMITS.maxWidth),
       maxHeight: intParam(params, "maxHeight", 800, FRAME_CAP_LIMITS.maxHeight),
       quality: intParam(params, "quality", DEFAULT_QUALITY, 100),
-      pace: "hi",
-      authPrompts: true,
+      pace: params.get("existingOnly") === "true" ? "lo" : "hi",
+      authPrompts: params.get("existingOnly") !== "true",
       pagePopups: true,
       ...(size && request.canOperate ? { size } : {}),
     };
     try {
-      const viewer = await this.#service.attachViewer(request.target, options, (output) => session.push(output));
+      const viewer = await this.#service.attachViewer(request.target, options, (output) => session.push(output), params.get("existingOnly") === "true");
       if (session.closed || session.closing) await viewer.close({ dropped: session.lost && session.theirs() });
       else session.attached(viewer, this.#service);
     } catch (error) {

@@ -1,3 +1,4 @@
+import { saveMapLayout, useSyncedMapLayout } from "./team-map-layout-sync";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/state/store";
 import { listenLiveFrames } from "@/lib/live-events";
@@ -48,7 +49,7 @@ function frameBlob(data: string, mime: string): Blob {
  * The Team map's computers and their newest screens, while `enabled`: the server's list every two seconds (which also
  * keeps it capturing small frames of running machines), plus the frames bots' own turns send on the event stream.
  */
-export function useMapComputers(enabled: boolean) {
+export function useMapComputers(enabled: boolean, pollMs = MAP_COMPUTERS_POLL_MS, liveUpdates = true) {
   const [payload, setPayload] = useState<MapComputersPayload | null>(null);
   const [frames, setFrames] = useState<Record<string, ShownFrame>>({});
   const [error, setError] = useState<string | null>(null);
@@ -105,7 +106,7 @@ export function useMapComputers(enabled: boolean) {
       if (stopped || inFlight || document.visibilityState !== "visible") return;
       inFlight = true;
       try {
-        const have = haveParam(framesRef.current);
+        const have = liveUpdates ? haveParam(framesRef.current) : "";
         const next: MapComputersPayload = await api(`/api/computers/frames${have ? `?have=${encodeURIComponent(have)}` : ""}`, { signal: AbortSignal.timeout(30_000) });
         if (stopped) return;
         const receivedAt = Date.now();
@@ -122,27 +123,28 @@ export function useMapComputers(enabled: boolean) {
       }
     };
     void poll();
-    const timer = window.setInterval(poll, MAP_COMPUTERS_POLL_MS);
-    const stopListening = listenLiveFrames({ screens: true,
+    const timer = window.setInterval(poll, pollMs);
+    const stopListening = liveUpdates ? listenLiveFrames({ screens: true,
       onFrame: (frame) => {
         if (frame.kind !== "screen" || frame.surface !== "computer" || !frame.png) return;
         const computer = computerForBot(computersRef.current, frame.botId);
         if (computer) void show(computer.id, frame.png, frame.mime ?? "image/png", Date.now(), "live");
       },
-    });
+    }) : () => {};
     return () => {
       stopped = true;
       window.clearInterval(timer);
       stopListening();
     };
-  }, [enabled, show]);
+  }, [enabled, pollMs, liveUpdates, show]);
 
   return { computers: payload?.computers ?? [], configured: payload?.configured ?? null, frames, error };
 }
 
 /** "Show computers", remembered per workspace like the canvas layout; until chosen, on whenever there is a computer to
  * show. `loaded` turns true once the saved choice has been read, so a hidden map never starts watching on load. */
-export function useShowComputers(defaultOn: boolean): { show: boolean; loaded: boolean; choose: (on: boolean) => void } {
+export function useShowComputers(defaultOn: boolean, preference: "showScreens" | "showBrowsers" = "showScreens"): { show: boolean; loaded: boolean; choose: (on: boolean) => void } {
+  const syncedLayout = useSyncedMapLayout();
   const [key, setKey] = useState<string | null>(null);
   const [chosen, setChosen] = useState<boolean | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -150,7 +152,7 @@ export function useShowComputers(defaultOn: boolean): { show: boolean; loaded: b
     let active = true;
     void api("/.well-known/openmausbot/environment", { signal: AbortSignal.timeout(5_000) }).then((environment) => {
       if (!active || typeof environment.environmentId !== "string") return;
-      const storageKey = `omb-team-canvas:${environment.environmentId}:computers`;
+      const storageKey = `omb-team-canvas:${environment.environmentId}:${preference === "showScreens" ? "computers" : "browsers"}`;
       setKey(storageKey);
       try {
         const saved = localStorage.getItem(storageKey);
@@ -158,11 +160,13 @@ export function useShowComputers(defaultOn: boolean): { show: boolean; loaded: b
       } catch {}
     }).catch(() => {}).finally(() => { if (active) setLoaded(true); });
     return () => { active = false; };
-  }, []);
+  }, [preference]);
+  useEffect(() => { if (syncedLayout?.[preference] !== undefined) setChosen(syncedLayout[preference]!); }, [syncedLayout, preference]);
   const choose = useCallback((on: boolean) => {
+    saveMapLayout({ [preference]: on });
     setChosen(on);
     if (!key) return;
     try { localStorage.setItem(key, on ? "on" : "off"); } catch {}
-  }, [key]);
+  }, [key, preference]);
   return { show: chosen ?? defaultOn, loaded, choose };
 }

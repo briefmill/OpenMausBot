@@ -155,7 +155,7 @@ export function createBrowserViewerRoutes(deps: BrowserViewerRouteDeps): RouteHa
       pending.release();
       const opened = deps.viewers.stream({
         session: browser.session, spec: browser.spec, botId: browser.botId, owner, person,
-        canOperate: url.searchParams.get("interactive") !== "false",
+        canOperate: url.searchParams.get("interactive") !== "false" && url.searchParams.get("existingOnly") !== "true",
         params: url.searchParams, req, socket: pending.socket, head: pending.head,
         isCurrent, restartRefusal: () => deps.restartRefusal(browser.session),
       });

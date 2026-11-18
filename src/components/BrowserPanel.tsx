@@ -1,6 +1,8 @@
 import { browserMessage } from "@/lib/browser-picker";
 import { BrowserElementPicker } from "./browser/BrowserElementPicker";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { pendingBrowserTeaching, teachingKey } from "@/lib/browser-teaching";
+import { useBrowserTeaching } from "./browser/useBrowserTeaching";
 import { Globe, Hand, Loader2, LockKeyhole, Moon, X } from "lucide-react";
 import { browserUnavailableReason } from "@/lib/feature-flags";
 import { t } from "@/lib/i18n";
@@ -42,7 +44,7 @@ function tabsOf(value: unknown): BrowserTab[] {
  * hold: one of the same person's, when none of their views uses it or when they take it over here.
  */
 export function LiveBrowser({ bot, signIn, page, accessControl }: { bot: Bot; signIn?: BrowserSignIn; page?: BrowserPage; accessControl?: ReactNode }) {
-  const { state } = useStore();
+  const { state, dispatch } = useStore();
   const [fallback, setFallback] = useState(false);
   const stream = state.config?.browserEngine?.engine === "chrome" && !fallback;
   const [attempt, setAttempt] = useState(0);
@@ -88,7 +90,13 @@ export function LiveBrowser({ bot, signIn, page, accessControl }: { bot: Bot; si
   const latest = useRef({ openSignInPage: () => {}, takeControl: () => {} });
   const signInOpen = state.computerControl?.[bot.id]?.help?.place === "browser";
   const scopedThread = browserScope(state.config?.team, bot.threadId).threadId;
-  keepNow.current = kept || signInOpen;
+  const teaching = useBrowserTeaching({ bot, threadId: scopedThread, stream, connected, control,
+    canvas: () => surface.current?.canvas() ?? null,
+    sender: () => { const client = clientRef.current; return (input) => client?.send(input); },
+    send: (input) => clientRef.current?.send(input),
+    take: () => { setKept(true); browserControl.current?.keep(true); browserControl.current?.takeControl(); },
+    dispatch, onError: setError });
+  keepNow.current = kept || signInOpen || teaching.recording;
   const profileName = bot.browserProfile === "guest" ? t("browser.panel.temporary")
     : state.config?.browserProfiles?.find((profile) => profile.id === bot.browserProfile)?.name ?? t("browser.panel.ownBrowser", { name: bot.name });
   useEffect(() => { if (showProfiles) profilesDialog.current?.showModal(); else profilesDialog.current?.close(); }, [showProfiles]);
@@ -168,6 +176,7 @@ export function LiveBrowser({ bot, signIn, page, accessControl }: { bot: Bot; si
   pickerScope.current = `${bot.id}:${scopedThread ?? ""}`;
   const onMessage = useCallback((message: Readonly<Record<string, unknown>>) => {
     browserMessage(pickerScope.current, message);
+    if (message.type === "teaching") teaching.message(message);
     if (message.type === "tabs") {
       const next = tabsOf(message.tabs);
       setTabs(next);
@@ -331,7 +340,7 @@ export function LiveBrowser({ bot, signIn, page, accessControl }: { bot: Bot; si
           onControl={onControl}
           onMessage={onMessage}
           onConnectedChange={(next) => { setConnected(next); if (next) { setStarting(false); setGone(false); setError(""); } }}
-          onFirstFrame={() => setStarting(false)}
+          onFirstFrame={() => { setStarting(false); if (pendingBrowserTeaching(teachingKey(bot.id, scopedThread))) teaching.start(); }}
           onUnauthorized={() => { if (stream) setFallback(true); else setGone(true); }}
           onGone={() => setGone(true)}
           onClose={(code, reason) => { if (code === 1013 && reason) setError(reason); }}
@@ -349,9 +358,15 @@ export function LiveBrowser({ bot, signIn, page, accessControl }: { bot: Bot; si
     </div>
     <footer ref={browserTools} role="toolbar" aria-label={t("browser.panel.pageLabel", { name: bot.name })} className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-hairline/40 px-3 py-2">
       {accessControl}
+      {stream ? <BrowserElementPicker scopeKey={`${bot.id}:${scopedThread ?? ""}`} read={() => ({ scopeKey: `${bot.id}:${scopedThread ?? ""}`, connected, control: controlRef.current, surface: () => surface.current?.canvas() ?? null, send: message => clientRef.current?.send(message), take: () => browserControl.current?.takeControl() })} /> : undefined}
       <BrowserControlPill botName={bot.name} connected={connected} control={control} takeStatus={takeStatus}
         hint={t(kept || signInOpen ? "browser.control.keptHint" : "browser.control.yoursHint", { name: bot.name })} onTake={takeControl} onHandBack={handBack} />
-      {stream ? <BrowserElementPicker scopeKey={`${bot.id}:${scopedThread ?? ""}`} read={() => ({ scopeKey: `${bot.id}:${scopedThread ?? ""}`, connected, control: controlRef.current, surface: () => surface.current?.canvas() ?? null, send: message => clientRef.current?.send(message), take: () => browserControl.current?.takeControl() })} /> : undefined}
+      <button type="button" disabled={!connected || !stream || teaching.saving} onClick={() => void (teaching.recording ? teaching.stop() : teaching.start())}
+        className={teaching.recording ? "min-h-9 rounded-lg border border-transparent bg-danger px-3 text-xs font-medium text-white" : "min-h-9 rounded-lg border border-hairline px-3 text-xs font-medium text-ink-secondary hover:bg-inset hover:text-ink disabled:opacity-40"}>
+        {teaching.saving ? "Saving training…" : teaching.recording ? "■ Stop training session" : "Record training session"}
+      </button>
+      {teaching.recording && <span role="status" className="text-danger">Recording browser and actions</span>}
+      {teaching.unsaved && <button type="button" className="underline text-danger" onClick={() => void teaching.retry()}>Retry saving training</button>}
     </footer>
     <dialog ref={profilesDialog} onClose={() => setShowProfiles(false)} onClick={(e) => { if (e.target === e.currentTarget) setShowProfiles(false); }} className="m-auto w-[min(420px,calc(100%-32px))] max-h-[80vh] overflow-auto rounded-2xl border border-hairline/50 bg-card p-5 text-ink shadow-2xl backdrop:bg-black/40">
       <div className="mb-4 flex items-center justify-between"><h2 className="text-[15px] font-medium">{t("browser.panel.profiles")}</h2><button className={button} aria-label={t("browser.panel.closeProfiles")} onClick={() => setShowProfiles(false)}><X size={16} /></button></div>
@@ -386,7 +401,7 @@ export function BrowserPanel({ bot, signIn, page, accessControl }: { bot: Bot; s
     finally { setRequested(false); }
   };
   if (bot.browser === false) return <div className="p-5 text-[13px] text-ink-secondary">{t("browser.panel.enableBot")}</div>;
-  if (engine?.kind === "engine" && !installing && !engine.installError) return <LiveBrowser key={bot.id} bot={bot} signIn={signIn} page={page} accessControl={accessControl} />;
+  if (engine?.kind === "engine" && !installing && !engine.installError) return <LiveBrowser key={`${bot.id}:${bot.threadId}:${bot.browserProfile}`} bot={bot} signIn={signIn} page={page} accessControl={accessControl} />;
   return <div className="flex min-h-0 flex-1 flex-col items-start justify-center gap-3 rounded-xl bg-card p-5">
     <div className="text-[15px] font-medium text-ink">{engine?.kind === "engine" ? t("browser.panel.installIncomplete") : t("browser.panel.engineNotInstalled")}</div>
     <p className="text-[13px] leading-relaxed text-ink-secondary">{engine?.kind === "engine" ? t("browser.panel.installIncompleteHelp") : engine?.installable && admin !== false ? t("browser.panel.engineNotInstalledHelp", { name: bot.name }) : browserUnavailableReason(state.config)}</p>

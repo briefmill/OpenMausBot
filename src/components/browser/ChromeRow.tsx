@@ -66,10 +66,10 @@ export function BrowserControlPill(props: {
           title={yours && props.hint ? props.hint : t(handsBack ? "browser.control.handBack" : "browser.control.take")}
           disabled={!connected || pill === "elsewhere" || pill === "connecting" || pill === "taking" || pill === "waiting"}
           onClick={handsBack ? props.onHandBack : props.onTake}
-          className={`flex max-w-56 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] disabled:cursor-default ${handsBack ? "border-accent-border bg-accent/15 text-accent-text" : "border-hairline text-ink-secondary hover:bg-inset hover:text-ink"}`}
+          className={`flex min-h-9 max-w-full shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border px-3 text-xs font-medium disabled:cursor-default ${handsBack ? "border-accent-border bg-accent/15 text-accent-text" : "border-hairline text-ink-secondary hover:bg-inset hover:text-ink"}`}
           data-pill={pill}
         >
-          {pill === "taking" || pill === "waiting" || pill === "connecting" ? <Loader2 size={12} className="shrink-0 animate-spin" aria-hidden="true" /> : <Hand size={12} className="shrink-0" aria-hidden="true" />}
+          {pill === "taking" || pill === "waiting" || pill === "connecting" ? <Loader2 size={16} className="shrink-0 animate-spin" aria-hidden="true" /> : <Hand size={16} className="shrink-0" aria-hidden="true" />}
           <span className="truncate">{PILL_TEXT[pill](botName)}</span>
           {pill === "bot" || pill === "watching" ? <span className="shrink-0 text-ink">· {t("browser.control.take")}</span> : handsBack ? <span className="shrink-0">· {t("browser.control.handBack")}</span> : null}
         </button>);

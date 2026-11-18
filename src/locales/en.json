@@ -10991,5 +10991,8 @@
   "templateImport.notATemplate": "This isn't a template. Choose another one.",
   "sidebar.addDepartment": "Add department",
   "sidebar.import": "Import…",
-  "team.shareDepartment": "Share"
+  "team.shareDepartment": "Share",
+  "mapBrowser.name": "{name}’s browser",
+  "mapBrowser.waiting": "Waiting for a live browser view",
+  "mapBrowser.idle": "Browser preview pauses while the bot is idle"
 }

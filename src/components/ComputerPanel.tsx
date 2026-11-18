@@ -1,3 +1,5 @@
+import { pendingBrowserTeaching, teachingKey, watchBrowserTeaching } from "@/lib/browser-teaching";
+import { browserScope as teachingBrowserScope } from "@/lib/team-browser";
 import { boatCapableEngine, cloudEngineOf } from "@/lib/remote-desktop";
 import { canWorkOnCloud } from "../../shared/cloud-computer";
 import { viewerTargetId } from "../../shared/desktop-viewer";
@@ -250,6 +252,12 @@ export function ComputerPanel({
   const errorText = panelErrorText(error);
   const advanced = useAdvancedMode();
   const [storedPanelView, setPanelView] = useState<ComputerPanelView>(() => readComputerPanelView(bot.id));
+  useEffect(() => {
+    const selectTraining = () => {
+      if (pendingBrowserTeaching(teachingKey(bot.id, teachingBrowserScope(state.config?.team, bot.threadId).threadId))) setPanelView("browser");
+    };
+    selectTraining(); return watchBrowserTeaching(selectTraining);
+  }, [bot.id, bot.threadId, state.config?.team]);
   const requestedDataResult = state.dataResultFocus?.botId === bot.id ? state.dataResultFocus : undefined;
   const [dataRequest, setDataRequest] = useState<{ id: string; requestId: number }>();
   const androidStatus = useAndroidUsbDevices(usbPhoneTakeoverEnabled(state.config));
@@ -308,7 +316,7 @@ export function ComputerPanel({
     if (previous === panelTargetKey && (explicitPanelView.current || !(bot.computer === "browser" && browserEnabled))) return;
     if (previous !== panelTargetKey) explicitPanelView.current = false;
     previousPanelTarget.current = panelTargetKey;
-    setPanelView(bot.computer === "browser" && browserEnabled ? "browser"
+    setPanelView(pendingBrowserTeaching(teachingKey(bot.id, teachingBrowserScope(state.config?.team, bot.threadId).threadId)) || bot.computer === "browser" && browserEnabled ? "browser"
       : previous === null ? readComputerPanelView(bot.id) : "computer");
   }, [panelTargetKey, bot.id, bot.computer, browserEnabled]);
 
@@ -1051,6 +1059,7 @@ export function ComputerPanel({
   const [browserTurningOn, setBrowserTurningOn] = useState(false);
   const turnOnBrowser = async () => {
     if (browserTurningOn) return;
+    explicitPanelView.current = true;
     setBrowserTurningOn(true);
     setError(null);
     try {
@@ -1061,7 +1070,10 @@ export function ComputerPanel({
         });
         dispatch({ type: "configStatus", config });
       }
-      if (profileBot.browser === false) dispatch({ type: "updateBot", botId: profileBot.id, patch: { browser: true } });
+      if (profileBot.browser === false) {
+        dispatch({ type: "updateBot", botId: profileBot.id, patch: { browser: true } });
+        if (!await flushBotPatches(profileBot.id)) throw new Error(t("settings.experimental.error"));
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("settings.experimental.error"));
     } finally {
@@ -1070,6 +1082,7 @@ export function ComputerPanel({
   };
 
   const turnOffBrowser = () => {
+    explicitPanelView.current = true;
     setError(null);
     dispatch({ type: "updateBot", botId: profileBot.id, patch: { browser: false } });
   };
@@ -1256,7 +1269,7 @@ export function ComputerPanel({
         <div {...tabPanelProps("routines")} className={cn("min-h-0 flex-1 overflow-y-auto px-4 pb-4", TAB_PANEL_FOCUS)}>
           <RoutinesSection key={bot.id} bot={bot} routines={botRoutines} runs={state.routineRuns} defaultRunOn={cloudRoutineReady ? "cloud" : "maus"} />
         </div>
-      ) : panelView === "browser" && browserEnabled ? (
+      ) : panelView === "browser" && browserEnabled && !browserTurningOn ? (
         <div {...tabPanelProps("browser")} className={cn("flex min-h-0 flex-1 flex-col px-4 pb-4", TAB_PANEL_FOCUS)}>
           {signInHelp?.place === "browser" && <div className="-mt-1 mb-3">{signInBanner()}</div>}
           <BrowserPanel bot={bot} signIn={signInRequest} page={pageRequest} accessControl={browserSwitchRow} />

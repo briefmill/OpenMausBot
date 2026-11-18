@@ -431,6 +431,17 @@ describe("holding the browser on purpose", () => {
     expect(h.transport.release).toHaveBeenCalledOnce();
   });
 
+  it("hands back on request when a browser press has no matching release", async () => {
+    vi.useFakeTimers();
+    const h = harness();
+    h.interact(press);
+    await settle();
+    h.control.handBack();
+    vi.advanceTimersByTime(0);
+    await settle();
+    expect(h.transport.release).toHaveBeenCalledOnce();
+  });
+
   it("hands back at once a hold the person has from another view, which this one never took", async () => {
     const h = harness();
     h.control.handBack();

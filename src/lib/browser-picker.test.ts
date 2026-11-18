@@ -21,6 +21,18 @@ it("shows active selection on the toolbar control and Escape exits", async () =>
   flushSync(() => document.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true})));
   expect(button().getAttribute("aria-pressed")).toBe("false");
 });
+it("can restore the annotation button on the same host after cleanup", () => {
+  const host = document.createElement("omb-browser-picker");
+  document.body.append(host);
+  const read = () => ({
+    scopeKey: "fixture", connected: false, control: null,
+    surface: () => null, send: vi.fn(), take: vi.fn(),
+  });
+  flushSync(() => { cleanup = mountBrowserPicker(host, read); });
+  flushSync(() => cleanup?.());
+  flushSync(() => { cleanup = mountBrowserPicker(host, read); });
+  expect(host.shadowRoot?.querySelectorAll("button")).toHaveLength(1);
+});
 it("adds a captured element to an unsent draft without clicking the webpage", async () => {
   const host = document.createElement("omb-browser-picker"); document.body.append(host);
   const canvas = document.createElement("canvas"); canvas.width = canvas.height = 100; document.body.append(canvas);
