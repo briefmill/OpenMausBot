@@ -26,6 +26,7 @@ export interface ReplyDraft {
   destination?:{workspace:string;channel:string;thread?:string;sender:string;scope:string;hash:string};
   inbound?:ReplyInbound;
   deliveryError?:string;
+  preview?:boolean;
   receipt?:{id:string;url?:string};
 }
 export interface ReplyDraftAnswer { draft:ReplyDraft }

@@ -17,7 +17,7 @@ export function createReplyDraftRoutes(deps:{store:ReplyDraftStore;visible(auth:
    if(method==="GET"&&!match[2])return answer(draft);
    if(!String(req.headers["content-type"]??"").startsWith("application/json"))return json(res,415,{error:"Expected JSON"});
    if(method==="PATCH"&&!match[2]){const body=change.parse(await readBody(req,80_000));return answer(deps.store.edit(draft.id,body.revision,body.content,body.discard));}
-   if(method==="POST"&&match[2]){const body=send.parse(await readBody(req,1024));return answer(await deps.store.send(draft.id,body.revision,body.hash,deps.deliver));}
+   if(method==="POST"&&match[2]){if(draft.preview)return json(res,403,{error:"This is a synthetic preview. Sending is disabled."});const body=send.parse(await readBody(req,1024));return answer(await deps.store.send(draft.id,body.revision,body.hash,deps.deliver));}
    return json(res,405,{error:"Method not allowed"});
   }catch(error){return json(res,error instanceof z.ZodError?400:(error as {status?:number}).status??500,{error:error instanceof z.ZodError?"Invalid reply fields":(error as Error).message});}
  };
