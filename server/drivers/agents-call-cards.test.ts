@@ -24,7 +24,7 @@ describe("the widget tools in the catalog", () => {
     ];
     for (const profile of profiles) {
       const names = availableTools(profile).map((tool) => tool.name);
-      expect(names.slice(names.indexOf("attach_file"), names.indexOf("attach_file") + 2)).toEqual(["attach_file", "show_widget"]);
+      expect(names.slice(names.indexOf("attach_file"), names.indexOf("attach_file") + 3)).toEqual(["attach_file", "prepare_reply", "show_widget"]);
       expect(names).not.toContain("update_widget");
     }
   });

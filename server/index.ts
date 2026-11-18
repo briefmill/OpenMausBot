@@ -1,3 +1,8 @@
+import { customMcpServers } from "./config.ts";
+import { ReplyDraftStore, ReplyNotSent } from "./reply/store.ts";
+import { replyContentSchema, replyInboundSchema } from "../shared/reply-draft.ts";
+import { createReplyDraftRoutes } from "./routes/reply-drafts.ts";
+import { frontDeskDraftRequest } from "./routes/message-review.ts";
 import { workspaceAccountBinding, workspaceAccountCallProblem, workspaceRoutineGrant } from "./hosted-workspace-policy.ts";
 // Import first: it reads a Cloud home's secrets off the launcher's pipe before any module can start a process.
 import { BOOT_CLOUD_SECRETS } from "./cloud-secrets-boot.ts";
@@ -9187,6 +9192,27 @@ const teamMemory = new TeamMemory(join(DATA_DIR, "team-memory.json"));
 const teamMemoryRequests = createTeamMemoryRequests({ teamMemory, store, sectionKey: sectionContextKey, decide: (row) => appendDecision(DATA_DIR, row) });
 const outsideWrites = createOutsideWrites({ store, notify, language: (threadId) => threadLanguage(threadId), decide: (row) => appendDecision(DATA_DIR, row),
   writeMemory: (botId, threadId, change) => { const written = botMemoryUpdate(teamHost.layer(botId, threadId), change, { source: memorySourceLabel({ room: store.groupByThread(threadId), task: store.taskByThread(teamHost.baseBotId(botId), threadId), threadId }), aboutMe: null, prefer: null }); return written.ok ? null : written.error; } });
+const replyDrafts = new ReplyDraftStore(join(DATA_DIR,"reply-drafts"));
+ROUTES.push(createReplyDraftRoutes({store:replyDrafts,
+ visible:(auth,botId,threadId)=>{const visible=visibleTo(viewerFor(auth));return visible.bot(botId)&&visible.thread(threadId)&&Boolean(connectorThread(botId,threadId));},
+ deliver:async draft=>{
+  if(draft.content.channel==="email") {
+   const body=draft.content;
+   const result=await emailHost.handle({method:"tools/call",params:{name:"EMAIL_SEND_MESSAGE",arguments:{account:body.from,to:body.to,cc:body.cc,bcc:body.bcc,subject:body.subject,text:body.text,mailbox:body.mailbox,...(body.replyToUid?{reply_to_uid:body.replyToUid}:{})}}},{botId:draft.botId,threadId:draft.threadId},()=>{});
+   if(!("content" in result)||result.isError)throw new Error("Email delivery not confirmed");
+   return {id:draft.id};
+  }
+  const bot=store.bot(draft.botId);
+  if(!bot||!draft.destination||!Object.values(customMcpServers(cfg,bot.mcpServers,bot.id)).some(server=>"url" in server&&typeof server.url==="string"&&server.url===`https://watcher-production-86cc.up.railway.app/mcp/scoped/${draft.destination!.scope}`))throw new ReplyNotSent("Slack access is no longer assigned to this bot. Nothing was sent.");
+  let remote;try{remote=await frontDeskDraftRequest(draft.content.frontDeskDraftId,"GET");}catch{throw new ReplyNotSent("Front Desk could not load this draft. Nothing was sent.");}
+  if(!draft.destination||remote.hash!==draft.destination.hash||remote.team_id!==draft.destination.workspace||remote.channel_id!==draft.destination.channel||remote.sender_user_id!==draft.destination.sender)throw new ReplyNotSent("Slack draft or sender changed. Nothing was sent.");
+  let hash=String(remote.hash);
+  if(remote.text!==draft.content.text){try{const updated=await frontDeskDraftRequest(draft.content.frontDeskDraftId,"PATCH",{hash,text:draft.content.text});hash=String(updated.hash);}catch{throw new ReplyNotSent("Front Desk could not save the edited reply. Its reviewed-draft editing endpoint must be available before sending edited Slack replies. Nothing was sent.");}}
+  const sent=await frontDeskDraftRequest(draft.content.frontDeskDraftId,"POST",{hash});
+  if(sent.state!=="sent")throw new Error("Slack delivery not confirmed");
+  return {id:String(sent.ts??draft.id)};
+ }
+}));
 const outboundRequests = new OutboundRequestService();
 const outboundHold = createOutboundHold({ store, dataDir: DATA_DIR, outboundRequests, holdMs: OUTBOUND_HOLD_MS, connectorThread, activeGroupTurnForBot, notify });
 
@@ -12984,6 +13010,38 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         const result = toolResults.read(internalCapability, id, offset);
         return result ? json(res, 200, result) : json(res, 404, { error: "Saved result unavailable in this bot's conversation, expired, or offset out of range. Do not repeat an action to retrieve its output." });
+      }
+      if(method==="POST"&&path==="/api/internal/reply-draft") {
+        if(!connectorThread(internalSender.id,internalCapability.threadId)||store.groupByThread(internalCapability.threadId))return json(res,403,{error:"Prepare replies in a direct conversation you own."});
+        const body=await readInternalBody();requireActiveInternalCapability();
+        const parsed=replyContentSchema.safeParse(body?.content);if(!parsed.success)return json(res,400,{error:"Invalid reply fields"});
+        const content=parsed.data;
+        const inboundResult=body?.inbound===undefined?undefined:replyInboundSchema.safeParse(body.inbound);
+        if(inboundResult&&!inboundResult.success)return json(res,400,{error:"Invalid inbound message context"});
+        const inbound=inboundResult?.success?inboundResult.data:undefined;
+        const inboundAttachments=[];
+        if(inbound) {
+          for(const file of inbound.attachments) {
+            const saved=await saveTurnFile(internalCapability,internalSender.id,await attachmentVmForTurn(internalCapability),file.path,file.name,true);
+            requireActiveInternalCapability();
+            inboundAttachments.push(saved.attachment);
+            file.path=saved.attachment.path;
+          }
+        }
+        let destination;
+        if(content.channel==="email") {
+          const access=emailAccess(internalSender,"EMAIL_SEND_MESSAGE");
+          if(!access.ok||!emailService.store.get(content.from))return json(res,403,{error:"This bot needs a connected, permitted sending mailbox."});
+        }else{
+          const remote=await frontDeskDraftRequest(content.frontDeskDraftId,"GET");
+          const allowed=Object.values(customMcpServers(cfg,internalSender.mcpServers,internalSender.id)).some(server=>"url" in server&&typeof server.url==="string"&&server.url.startsWith("https://watcher-production-86cc.up.railway.app/mcp/scoped/"+String(remote.scope))&&new URL(server.url).pathname.endsWith("/"+String(remote.scope)));
+          if(!allowed||remote.state!=="pending"||typeof remote.sender_user_id!=="string")return json(res,403,{error:"Use a pending Front Desk draft from this bot's assigned scope."});
+          destination={workspace:String(remote.team_id),channel:String(remote.channel_id),thread:typeof remote.thread_ts==="string"?remote.thread_ts:undefined,sender:remote.sender_user_id,scope:String(remote.scope),hash:String(remote.hash)};
+        }
+        requireActiveInternalCapability();
+        const draft=replyDrafts.create(internalSender.id,internalCapability.threadId,content,destination,inbound);
+        const message=store.appendMessage(internalCapability.threadId,{role:"bot",kind:"widget",replyDraftId:draft.id,attachments:inboundAttachments,text:`${content.channel==="email"?"Email":"Slack"} reply draft ready for review.`});
+        return json(res,201,{draftId:draft.id,messageId:message.id});
       }
       if (method === "POST" && path === "/api/internal/options-card") {
         if (!connectorThread(internalSender.id, internalCapability.threadId)) {

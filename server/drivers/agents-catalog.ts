@@ -805,7 +805,7 @@ const WATCHER_TOOL_NAMES = new Set(["create_options_card"]);
 
 const LOCAL_VM_TOOL_NAMES = new Set(["vm_exec"]);
 /** Refused in a room's thread (routes/waits.ts), and list_waits, since a room holds no wait. */
-const ROOM_REFUSED_TOOL_NAMES = new Set([...WAIT_TOOL_NAMES, "burst", "rename_thread"]);
+const ROOM_REFUSED_TOOL_NAMES = new Set([...WAIT_TOOL_NAMES, "burst", "rename_thread", "prepare_reply"]);
 const CLOUD_HOME_SURFACE = {
   type: "string", enum: ["auto", "cloud", "browser"],
   description: "auto = suitable configured computer, cloud = the bot's cloud computer, browser = built-in browser. Omit to list. This server runs in the cloud: the user's own computer and a Local VM are not places here.",

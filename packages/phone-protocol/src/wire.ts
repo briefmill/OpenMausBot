@@ -460,6 +460,7 @@ export interface WireMessage extends ServerTextLine, HelperIntroField, SetupCard
   card?: OptionCardData;
   /** widget rows (kind "widget"): a bot-authored UI tree. `text` is its
    * readable fallback for clients that do not know the kind. */
+  replyDraftId?: string;
   widget?: WidgetPayload;
   /** widget rows the server built from records (mail, calendar, other
    * bots' work) rather than the bot: replayed to the bot only as labelled
