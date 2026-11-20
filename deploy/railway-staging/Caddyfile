@@ -1,0 +1,16 @@
+{
+ admin off
+ auto_https off
+}
+:{$PORT:8080} {
+ handle /hooks/* {
+  reverse_proxy unix//tmp/omb-edge/hooks.sock
+ }
+ handle {
+  reverse_proxy unix//tmp/omb-edge/http.sock {
+   flush_interval -1
+   header_up -Accept-Encoding
+   header_up X-Forwarded-Proto https
+  }
+ }
+}

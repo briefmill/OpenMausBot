@@ -1,6 +1,7 @@
 // The person's mailboxes with their passwords, sealed under a key of their own (a 0600 file beside the store), so they
 // rest encrypted on a desktop and on a Cloud home alike. No route, card, bot or log ever gets a password back; the box
 // hides the data folder, so no bot's shell can open these files.
+import { emailSignatureSchema } from "../../shared/reply-draft.ts";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -23,6 +24,7 @@ const accountSchema = z.object({
   /** The outgoing server's own sign-in, when it isn't the incoming one's. */
   smtpUsername: z.string().min(1).max(320).optional(),
   smtpPassword: z.string().min(1).max(4_096).optional(),
+  signature: emailSignatureSchema.optional(),
   connectedAt: z.number(),
   problem: z.string().max(400).optional(),
   /** Why sending doesn't work, from the last check or send; sends wait for the person while it is set. */

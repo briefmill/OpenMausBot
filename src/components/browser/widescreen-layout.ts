@@ -1,10 +1,18 @@
 import { useEffect, useState, type RefObject } from "react";
 
-const PAGE_RATIO = 16 / 9;
+const PORTRAIT_MAX_WIDTH = 560;
+const SQUARE_MAX_WIDTH = 880;
+
+function browserPageRatio(width: number) {
+  if (width < PORTRAIT_MAX_WIDTH) return 9 / 16;
+  if (width < SQUARE_MAX_WIDTH) return 1;
+  return 16 / 9;
+}
 export function fitBrowserPage(width: number, height: number) {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) return null;
-  const fittedWidth = Math.min(width, height * PAGE_RATIO);
-  return { width: Math.floor(fittedWidth), height: Math.floor(fittedWidth / PAGE_RATIO) };
+  const ratio = browserPageRatio(width);
+  const fittedWidth = Math.min(width, height * ratio);
+  return { width: Math.max(1, Math.round(fittedWidth)), height: Math.max(1, Math.round(fittedWidth / ratio)) };
 }
 
 export function useWidescreenBrowser(panel: RefObject<HTMLDivElement | null>, page: RefObject<HTMLDivElement | null>, fullscreen: boolean, footer?: RefObject<HTMLElement | null>) {
@@ -30,7 +38,7 @@ export function useWidescreenBrowser(panel: RefObject<HTMLDivElement | null>, pa
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(measure);
     if (footer?.current) observer.observe(footer.current);
-    observer.observe(parent); observer.observe(card); observer.observe(viewport);
+    observer.observe(parent); observer.observe(card);
     for (const sibling of parent.children) if (sibling !== card) observer.observe(sibling);
     return () => observer.disconnect();
   }, [panel, page, fullscreen, footer]);

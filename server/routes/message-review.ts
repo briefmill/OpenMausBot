@@ -41,3 +41,12 @@ export function createMessageReviewRoutes(deps: { key(): string | undefined; fet
 const approvalKey=process.env.OMB_FRONTDESK_APPROVAL_KEY;
 delete process.env.OMB_FRONTDESK_APPROVAL_KEY;
 export const messageReviewRoutes=createMessageReviewRoutes({key:()=>approvalKey});
+
+export async function frontDeskDraftRequest(id:string, method:"GET"|"PATCH"|"POST", body?:unknown):Promise<Record<string,unknown>> {
+ if(!approvalKey)throw new Error("Front Desk reply approval is not configured on this server.");
+ if(!/^[a-f0-9-]{36}$/.test(id))throw new Error("Invalid Front Desk draft.");
+ const response=await fetch(ORIGIN+"/admin/message-drafts/"+id,{method,redirect:"error",headers:{authorization:"Bearer "+approvalKey,"content-type":"application/json"},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(15_000)});
+ const raw=await response.text();if(raw.length>20_000)throw new Error("Front Desk returned an oversized draft.");
+ if(!response.ok)throw new Error("Front Desk could not confirm the reviewed reply. Check its status before retrying.");
+ return JSON.parse(raw);
+}

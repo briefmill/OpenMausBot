@@ -8,7 +8,7 @@ import { parseWidgetInput, widgetAdvice } from "../../shared/widget.ts";
 import type { ToolCallContext, ToolCallResult } from "./agents-call.ts";
 import type { Json } from "./agents-client.ts";
 
-export const CARD_TOOL_NAMES: ReadonlySet<string> = new Set(["create_options_card", "show_widget", "show_html"]);
+export const CARD_TOOL_NAMES: ReadonlySet<string> = new Set(["create_options_card", "prepare_reply", "show_widget", "show_html"]);
 
 const CARD_ROUTE = "/api/internal/options-card";
 
@@ -44,6 +44,10 @@ async function callAppTool(name: "show_html" | "update_html", args: Json, contex
 
 export async function callCardTool(name: string, args: Json, context: ToolCallContext): Promise<ToolCallResult> {
   const { api, apiResponse } = context.client;
+  if (name === "prepare_reply") {
+    const {ok,body}=await apiResponse("/api/internal/reply-draft",{method:"POST",body:JSON.stringify({content:args.content,inbound:args.inbound})});
+    return ok ? {text:`Saved editable reply ${String(body.draftId)} in chat. Only the person can send it. Continue other work; do not send through another tool.`} : {text:String(body.error??"Could not prepare reply"),isError:true};
+  }
   if (name === "create_options_card") {
     if (context.botId !== WATCHER_OPTIONS_CARD_BOT_ID) {
       return { text: "create_options_card is not enabled for this bot.", isError: true };

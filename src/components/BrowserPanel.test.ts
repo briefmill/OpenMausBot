@@ -110,7 +110,7 @@ describe("the browser panel's connection", () => {
     expect(FakeSocket.instances).toHaveLength(1);
     const url = new URL(FakeSocket.instances[0]!.url);
     expect(url.pathname).toBe("/api/bots/pepper/browser/stream");
-    expect(Object.fromEntries(url.searchParams)).toEqual({ maxWidth: "3200", maxHeight: "2000", width: "1600", height: "1000" });
+    expect(Object.fromEntries(url.searchParams)).toEqual({ maxWidth: "2000", maxHeight: "1250", width: "1600", height: "1000" });
     expect(FixtureEventSource.instances).toHaveLength(0);
     expect(host.querySelector("[data-browser-transport]")!.getAttribute("data-browser-transport")).toBe("stream");
   });
@@ -320,7 +320,7 @@ describe("who holds the browser", () => {
     await act(async () => { for (const observer of observers) observer(); });
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 600)); });
     expect(FakeSocket.instances).toEqual([socket]);
-    expect(socket.sent).toContainEqual({ type: "frameCap", maxWidth: 3600, maxHeight: 2200 });
+    expect(socket.sent).toContainEqual({ type: "frameCap", maxWidth: 2250, maxHeight: 1375 });
     expect(pill().dataset.pill).toBe("yours");
   });
 

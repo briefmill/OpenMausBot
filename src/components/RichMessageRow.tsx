@@ -1,3 +1,6 @@
+import { CopyButton, MessageActions, ReplyAction, messageActionClass } from "./MessageActions";
+import { ReactAction, ReactionChips } from "./Reactions";
+import { ReplyComposer } from "./ReplyComposer";
 import { AppWindow, Crosshair } from "lucide-react";
 import type { Message } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -12,6 +15,7 @@ import { WidgetMessage } from "./widget/WidgetMessage";
 
 export function richRowKind(message: Message): Message["kind"] {
   // MausBot's follow-up is text the model reads, drawn under its intro's card row (OptionsCardRow).
+  if (message.replyDraftId) return "widget";
   if (message.helperFollowup) return "options";
   if (message.setupSuggestion || message.settingsCard || (message.kind === "goal.run" && message.goalRun) || (message.kind === "burst" && message.burst)) return "widget";
   if (message.kind === "widget" && !message.widget) return "text";
@@ -20,10 +24,14 @@ export function richRowKind(message: Message): Message["kind"] {
 }
 
 /** `room`: shown to everyone in a room, view-only. */
-export function RichMessageRow({ botId, botName, threadId, message, room }: { botId: string; botName: string; threadId?: string; message: Message; room?: boolean }) {
+export function RichMessageRow({ botId, botName, threadId, message, room, onReply, canReact=false }: { botId: string; botName: string; threadId?: string; message: Message; room?: boolean; onReply?:(message:Message)=>void;canReact?:boolean }) {
   return (
     <MessageBoundary fallbackText={message.text ?? ""}>
-      {message.settingsCard
+      {message.replyDraftId ? <div data-message-row className="group w-full max-w-[640px]"><ReplyComposer id={message.replyDraftId} viewOnly={room} message={threadId?{threadId,messageId:message.id}:undefined} actions={text=><MessageActions side="bot" forceOpen>
+        {!room&&onReply&&<ReplyAction onReply={()=>onReply({...message,text})}/>}
+        {!room&&canReact&&threadId&&<ReactAction threadId={threadId} message={message}/>}
+        <CopyButton text={text} className={`${messageActionClass} opacity-100`}/>
+      </MessageActions>}/>{threadId&&<ReactionChips threadId={threadId} message={message} canReact={!room&&canReact}/>}</div> : message.settingsCard
         ? <SettingsCard message={message} />
         : message.setupSuggestion
         ? <HelperKeySuggestion threadId={threadId} message={message} />
