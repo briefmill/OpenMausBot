@@ -243,7 +243,7 @@ describe("bot-first sidebar", () => {
     fixture.state = { ...fixture.state, selectedId: bot.id, activeView: "chat" };
     const candidate = { ...bot, tasks: [], projects: [] };
     const simple = renderToStaticMarkup(createElement(BotListItem, rowProps("comfortable", candidate)));
-    expect(simple).toContain("[--row:color-mix(in_srgb,var(--color-accent)_15%,var(--color-panel))]");
+    expect(simple).toContain("[--row:var(--color-raised)]");
     expect(simple).toMatch(/data-bot-actions="atlas"[^>]*class="[^"]*\bpointer-events-none opacity-0 group-hover:pointer-events-auto/);
     expect(simple).toContain('class="flex items-baseline justify-between gap-2 pe-7 group-hover:pe-[3.25rem] group-focus-within:pe-[3.25rem] touch:pe-[3.25rem] max-md:touch:pe-7"');
     fixture.advanced = true;
@@ -382,7 +382,7 @@ describe("bot-first sidebar", () => {
     if (density !== "icons") expect(markup).toContain('aria-label="Expand Atlas threads" aria-expanded="false"');
   });
 
-  it.each(densities)("with Advanced threads off, hides thread browsing and creation but keeps attention accessible in %s density", (density) => {
+  it.each(densities)("with Advanced threads off, hides child rows and keeps the bot attention indicator in %s density", (density) => {
     fixture.advanced = true;
     fixture.showThreads = false;
     const markup = renderToStaticMarkup(createElement(BotListItem, rowProps(density)));
@@ -394,10 +394,7 @@ describe("bot-first sidebar", () => {
     expect(markup).not.toContain("New folder");
     expect(markup).not.toContain("Expand Atlas threads");
     expect(markup).toContain('data-testid="waiting-dot"');
-    for (const id of ["approval", "working", "queued", "unread"]) expect(markup).toContain(`data-sidebar-activity-row="${id}"`);
-    expect(markup).toContain('aria-label="Atlas: Review permission · Waiting for you…"');
-    expect(markup).toContain('aria-label="Atlas: Next job · Queued"');
-    expect(markup).toContain('aria-label="Atlas: Finished reply · Unread"');
+    expect(markup).not.toContain("data-sidebar-activity-row");
   });
 
   it("removes child controls and portals from a retained hidden folder list", () => {
@@ -659,13 +656,13 @@ describe("activity-only escape hatch", () => {
     for (const showThreads of [false, true]) for (const advanced of [false, true]) {
       fixture.showThreads = showThreads;
       fixture.advanced = advanced;
-      expect(rows(runner)).toBe(1);
+      expect(rows(runner)).toBe(advanced && !showThreads ? 0 : 1);
       expect(rows(ended)).toBe(0);
       if (showThreads) expect(rows(runner, "Main")).toBe(1);
     }
   });
 
-  it("lists a reply in the thread a bot was left on, since its row opens the main thread", () => {
+  it("only lists replies in other threads when Advanced threads are shown", () => {
     const left: Bot = { ...bot, threadId: "left-behind", mainThreadId: "main-chat", tasks: [
       { threadId: "left-behind", title: "Routine report", createdAt: 1, unread: true },
       { threadId: "main-chat", title: "Main chat", createdAt: 2, unread: true },
@@ -676,9 +673,9 @@ describe("activity-only escape hatch", () => {
     };
     fixture.advanced = true;
     fixture.showThreads = false;
-    expect(rows()).toEqual(["left-behind"]);
+    expect(rows()).toEqual([]);
     fixture.state.selectedId = left.id;
-    expect(rows()).toEqual(["main-chat"]);
+    expect(rows()).toEqual([]);
     fixture.showThreads = true;
     fixture.state.selectedId = "other-bot";
     expect(rows()).toEqual(["main-chat"]);

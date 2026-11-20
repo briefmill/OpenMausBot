@@ -19,7 +19,7 @@ it("includes the reviewed signature in both outgoing body formats without treati
 });
 
 it("binds signatures to the reviewed send hash", () => {
- const draft={content:{channel:"email",from:"me@example.com",to:["you@example.com"],cc:[],bcc:[],subject:"Reply",text:"Reply",mailbox:"INBOX",signature:{text:"First signature"}}} as ReplyDraft;
+ const draft:ReplyDraft={id:"draft",botId:"bot",threadId:"thread",revision:1,state:"draft",createdAt:1,updatedAt:1,content:{channel:"email",from:"me@example.com",to:["you@example.com"],cc:[],bcc:[],subject:"Reply",text:"Reply",mailbox:"INBOX",signature:{text:"First signature"}}};
  const hash=replyHash(draft);
  if(draft.content.channel==="email")draft.content.signature={text:"Changed signature"};
  expect(replyHash(draft)).not.toBe(hash);

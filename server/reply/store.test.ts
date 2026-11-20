@@ -43,6 +43,7 @@ describe("reviewed replies",()=>{
 it("pins social reply destinations while allowing text edits",()=>{
  const {store}=fixture();const draft=store.create("bot","thread",{channel:"social",platform:"instagram",account:"Example",conversation:"Client",replyToId:"inbound-1",kind:"message",sourceUrl:"https://instagram.com/direct/inbox/",text:"Draft"});
  const edited=store.edit(draft.id,1,{...draft.content,text:"Human edited"});expect(edited.content.text).toBe("Human edited");
- if(edited.content.channel!=="social")throw new Error("Expected social draft");
- expect(()=>store.edit(draft.id,edited.revision,{...edited.content,replyToId:"another-message"})).toThrow(/destination/);
+ const editedContent=edited.content;
+ if(editedContent.channel!=="social")throw new Error("Expected social draft");
+ expect(()=>store.edit(draft.id,edited.revision,{...editedContent,replyToId:"another-message"})).toThrow(/destination/);
 });
