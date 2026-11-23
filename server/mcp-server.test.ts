@@ -393,7 +393,7 @@ describe("MCP tool execution", () => {
     }, busyFetcher)).rejects.toThrow("let it finish");
 
     const fetcher = vi.fn(async (path: string, options?: RequestInit) => {
-      if (path === "/api/bots?messages=0") return { bots: [{ id: "bot-1", busy: false }] };
+      if (path === "/api/bots?messages=0") return { bots: [{ id: "bot-1", threadId: "task-1", busy: false, tasks: [{ threadId: "task-1" }, { threadId: "task-2" }] }] };
       if (path === "/api/instances") return { instances: [{
         instanceId: "codex", snapshot: { state: "available" },
         models: { default: "gpt-5.6-sol", options: [{ id: "gpt-5.6-sol" }] },
@@ -401,6 +401,7 @@ describe("MCP tool execution", () => {
       }] };
       if (path === "/api/bots/bot-1") {
         expect(JSON.parse(String(options?.body))).toEqual({
+          threadId: "task-1",
           modelSelection: { instanceId: "codex", model: "gpt-5.6-sol", effort: "high" },
           requireAvailableModel: true,
         });

@@ -1111,9 +1111,11 @@ export async function handleToolCall(
       }
       if (bot.busy) throw new Error("Interrupt the bot or let it finish before changing its model");
       const selection = await checkedModelSelection(args, fetcher);
+      const threadId = typeof bot.threadId === "string" ? bot.threadId : undefined;
+      if (!threadId) throw new Error("OpenMausBot did not return this bot's active conversation; update the server before changing its model");
       const res = await fetcher(`/api/bots/${encodeURIComponent(botId)}`, {
         method: "PATCH",
-        body: JSON.stringify({ modelSelection: selection, requireAvailableModel: true }),
+        body: JSON.stringify({ threadId, modelSelection: selection, requireAvailableModel: true }),
       });
       return { success: true, bot: projectBot(res.bot) };
     }
