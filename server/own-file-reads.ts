@@ -1,8 +1,8 @@
 // A bot reading its own files never needs the person: its standing instructions (SOUL.md), its skills with every
 // revision, its memory and its conversation folders are its own, and an unattended run that waits for an approval to
-// read them only stalls. Only plain reads count: one of the reading commands below made of plain words alone, or a read
-// tool's own paths, with every path inside the bot's own folders once every link is followed.
-import { realpathSync } from "node:fs";
+// read them only stalls. Only bounded read chains and read tools count, with every path inside the bot's own folders
+// once every link is followed.
+import { readdirSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 /** Commands that only read the files they name, with the flags that keep them that way: none that follows links out
@@ -116,6 +116,32 @@ export function readsOnly(paths: readonly string[], cwd: string, roots: readonly
 export function readsOwnFiles(dataDir: string, botId: string, ask: { command?: { command: string; cwd: string }; reads?: readonly string[] }): boolean {
   const roots = ownReadRoots(dataDir, botId);
   if (ask.reads?.length) return readsOnly(ask.reads, "/", roots);
-  const paths = ask.command ? readOnlyPaths(ask.command.command) : null;
-  return Boolean(paths && ask.command && readsOnly(paths, ask.command.cwd, roots));
+  if (!ask.command) return false;
+  const parts = ask.command.command.split("&&");
+  if (parts.length > 16) return false;
+  let cwd = ask.command.cwd;
+  for (const part of parts) {
+    const change = words(part);
+    if (change?.[0] === "cd") {
+      if (change.length !== 2 || !readsOnly([change[1]!], cwd, roots)) return false;
+      cwd = resolve(cwd, change[1]!);
+      try { if (!statSync(cwd).isDirectory()) return false; } catch { return false; }
+      continue;
+    }
+    let command = part.trim();
+    // Only this literal basename glob is expanded, and every matched target is checked after resolving links.
+    if (/(?:^|\s)\*\.md(?=\s|$)/.test(command)) {
+      let names: string[];
+      try { names = readdirSync(cwd).filter((name) => name.endsWith(".md")); } catch { return false; }
+      if (!names.length || names.some((name) => !/^[\w.,@%+= -]+\.md$/.test(name))) return false;
+      command = command.replace(/(^|\s)\*\.md(?=\s|$)/g, (_, space: string) => space + names.map((name) => "'" + name + "'").join(" "));
+    }
+    // grep's escaped alternation is literal inside double quotes; no other shell escape is accepted.
+    command = command.replace(/"([^"$`\\!]*(?:\\\|[^"$`\\!]*)*)"/g, (quoted) => quoted.replace(/\\\|/g, "|"));
+    const tokens = words(command);
+    const paths = tokens?.[0] === "ls" && tokens.slice(1).every((word) => READERS.ls!.flags.test(word))
+      ? ["."] : readOnlyPaths(command);
+    if (!paths || !readsOnly(paths, cwd, roots)) return false;
+  }
+  return parts.length > 0;
 }
