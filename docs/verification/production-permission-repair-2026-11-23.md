@@ -30,12 +30,29 @@ All 49 current bots and their existing threads have Full Access saved through th
 
 BVS defaults and selected conversations: eight Claude Sonnet 5.5 bots and six Codex GPT-5.6-sol bots; Atlas uses Claude Sonnet 5.5. Historical explicit model overrides were not bulk rewritten. The CLI's multi-thread model setter now pins the active conversation.
 
-## Deployment and verification still required
+## Deployment and production verification
 
-At the time this note was added, the qualified production runtime repair had **not been deployed**. Apply the launcher as the production start command and redeploy. Rollback is restoring `/usr/bin/tini -s -- node /data/permission-fix-20261119/bootstrap.mjs` and redeploying; the original package is preserved.
+The repair is deployed in Railway production deployment `69d87f1d-e451-4f63-b5ee-92f34e6a28f1` (SUCCESS, November 23, 17:45 UTC). Its effective deployment metadata contains the reviewed launcher. The repaired package exists on the production volume.
 
-Do not claim completion from health alone. Verify fresh read/write/readback of a harmless bot memory marker, a bounded Chief → specialist → Chief check on both providers, no repeated approval cards, settings persistence after restart, and the GHL profile's signed-in state. Do not send client messages, publish, spend money, expose pairing tokens, or merge client browser profiles as verification.
+Important Railway distinction: ordinary `deploymentRedeploy` initially reused the previous launch snapshot, producing healthy deployment `a761f4b2-afc7-4ac1-ad0b-643cf5d759b8` with the **old** start command. Live verification caught this; it was not accepted as a repair. Applying the saved service configuration with `serviceInstanceDeployV2(environmentId, serviceId)` produced the correct deployment. Check `meta.serviceManifest.deploy.startCommand`, not just service configuration or deployment health. Rollback means restoring `/usr/bin/tini -s -- node /data/permission-fix-20261119/bootstrap.mjs` in service settings and applying that configuration with `serviceInstanceDeployV2`; the original package is preserved.
+
+Verified after the correct deployment:
+
+- All 49 bot defaults and all 2,323 existing threads read back as Full Access. All 14 BVS default/selected model assignments and Atlas's Claude assignment persisted through restart.
+- Atlas wrote its harmless marker with native Write and read it with native Read.
+- Atlas delegated to BVS Website Builder on Codex. The specialist edited its own memory marker and read back the exact 36-byte value through its shell, with no permission prompt or `bwrap` failure. One newline-related patch attempt failed; the specialist corrected it and verified the final bytes.
+- The specialist's result returned automatically to Atlas. Atlas independently read the specialist's marker and reported the actual verified outcome.
+- Post-deployment permission-card count was **zero** in the Chief, specialist and GHL verification conversations. Browser tabs/snapshots, native file tools and Codex shell calls executed.
+- GHL's existing saved profile was signed into the BVS agency after restart, with the application sidebar/profile menu visible and no login/2FA prompt. An initial page-load wait timed out; the subsequent snapshot showed the app loaded. Some dashboard integration widgets reported expired connections; those are separate from browser sign-in and were not modified.
+
+Marker files are `memory/diagnostic-permission-persistence-20261123.md` inside each bot's own workspace: Atlas `49f430fb-e91e-4a02-8efe-06a9f5ef9d44` and Website Builder `3a3f358f-7145-4507-a91e-05f644cdf644`. Exact values are `MAUS-CLAUDE-PERSISTENCE-20261123-BFC5` and `MAUS-CODEX-PERSISTENCE-20261123-BFC5`. They are diagnostic files, not shared Brain/client records. Production memory was verified through write/readback and cross-provider result verification; a further production restart after writing these markers was not performed because real client work had resumed. Isolated memory-capture restart coverage passed separately.
+
+No client communications, publishing, ad spending, credential changes or merged browser profiles were used as verification. Existing client work resumed; it was not interrupted for an additional restart test. These checks establish the repaired permission/delegation path, not completion of every unrelated client assignment or health of every external integration.
 
 Diagnostic Atlas conversation: `5e341e72-9e3f-4e37-8fe7-572442da336b`.
 GHL work conversation: `75175fbf-ef89-4b31-afbc-8cb98a1df150`.
 CLI session label: `Codex production repair CLI` (normal pairing, revocable from device settings). Credentials are outside the repository.
+
+End-to-end Chief conversation: `3b5dc60b-5637-4dfe-b2c1-4c26616df099`.
+Delegated Codex conversation: `abf5714a-43ae-4878-9401-a0375e684fa2`.
+GHL browser verification conversation: `9cdad31b-c1e1-409e-90fa-99143678d649`.
