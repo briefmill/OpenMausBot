@@ -5,6 +5,7 @@ import { ReplyDraftStore, ReplyNotSent } from "./reply/store.ts";
 import { replyContentSchema, replyInboundSchema } from "../shared/reply-draft.ts";
 import { createReplyDraftRoutes } from "./routes/reply-drafts.ts";
 import { frontDeskDraftRequest } from "./routes/message-review.ts";
+import { deliverSlackReply } from "./reply/slack-delivery.ts";
 import { workspaceAccountBinding, workspaceAccountCallProblem, workspaceRoutineGrant } from "./hosted-workspace-policy.ts";
 // Import first: it reads a Cloud home's secrets off the launcher's pipe before any module can start a process.
 import { BOOT_CLOUD_SECRETS } from "./cloud-secrets-boot.ts";
@@ -9210,13 +9211,7 @@ ROUTES.push(createReplyDraftRoutes({store:replyDrafts,
   if(draft.content.channel==="social")throw new ReplyNotSent("Social sending is not connected. Nothing was sent.");
   const bot=store.bot(draft.botId);
   if(!bot||!draft.destination||!Object.values(customMcpServers(cfg,bot.mcpServers,bot.id)).some(server=>"url" in server&&typeof server.url==="string"&&server.url===`https://watcher-production-86cc.up.railway.app/mcp/scoped/${draft.destination!.scope}`))throw new ReplyNotSent("Slack access is no longer assigned to this bot. Nothing was sent.");
-  let remote;try{remote=await frontDeskDraftRequest(draft.content.frontDeskDraftId,"GET");}catch{throw new ReplyNotSent("Front Desk could not load this draft. Nothing was sent.");}
-  if(!draft.destination||remote.hash!==draft.destination.hash||remote.team_id!==draft.destination.workspace||remote.channel_id!==draft.destination.channel||remote.sender_user_id!==draft.destination.sender)throw new ReplyNotSent("Slack draft or sender changed. Nothing was sent.");
-  let hash=String(remote.hash);
-  if(remote.text!==draft.content.text){try{const updated=await frontDeskDraftRequest(draft.content.frontDeskDraftId,"PATCH",{hash,text:draft.content.text});hash=String(updated.hash);}catch{throw new ReplyNotSent("Front Desk could not save the edited reply. Its reviewed-draft editing endpoint must be available before sending edited Slack replies. Nothing was sent.");}}
-  const sent=await frontDeskDraftRequest(draft.content.frontDeskDraftId,"POST",{hash});
-  if(sent.state!=="sent")throw new Error("Slack delivery not confirmed");
-  return {id:String(sent.ts??draft.id)};
+  return deliverSlackReply(draft,frontDeskDraftRequest);
  }
 }));
 const outboundRequests = new OutboundRequestService();

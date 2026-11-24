@@ -3651,5 +3651,8 @@ button:disabled.bg-danger {
   --color-hairline: #383838;
 }
 .reply-composer .reply-send { background: #f3f3f3; color: #171717; }
+.reply-composer .reply-body { background: transparent; }
+.reply-composer .reply-body:hover:not(:disabled),
+.reply-composer .reply-body:focus:not(:disabled) { background: var(--color-inset); }
 .reply-composer .reply-send:hover:not(:disabled) { background: #fff; }
 .reply-composer .reply-send:disabled { background: #363636; color: #a3a3a3; }

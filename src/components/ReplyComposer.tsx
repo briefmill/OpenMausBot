@@ -19,7 +19,7 @@ function ReplyBody({value,disabled,onChange,onPaste,label="Reply message"}:{valu
  const resize=()=>{const node=ref.current;if(!node)return;node.style.height="0px";const height=Math.max(60,Math.min(node.scrollHeight,420));node.style.height=`${height}px`;node.style.overflowY=node.scrollHeight>420?"auto":"hidden";};
  useLayoutEffect(resize,[value]);
  useEffect(()=>{const node=ref.current;if(!node)return;let width=node.getBoundingClientRect().width;const observer=new ResizeObserver(()=>{const next=node.getBoundingClientRect().width;if(next!==width){width=next;resize();}});observer.observe(node);return()=>observer.disconnect();},[]);
- return <textarea ref={ref} aria-label={label} rows={1} disabled={disabled} className={`${field} min-h-[60px] resize-none leading-relaxed`} value={value} onPaste={onPaste} onChange={event=>onChange(event.target.value)}/>;
+ return <textarea ref={ref} aria-label={label} rows={1} disabled={disabled} className={`${field} reply-body min-h-[60px] resize-none leading-relaxed`} value={value} onPaste={onPaste} onChange={event=>onChange(event.target.value)}/>;
 }
 export function ReplyComposer({id,viewOnly=false,message,actions}:{id:string;viewOnly?:boolean;message?:MessageAttachmentContext;actions?:(text:string)=>ReactNode}) {
  const [detailsOpen,setDetailsOpen]=useState(false);
