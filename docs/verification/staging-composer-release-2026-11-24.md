@@ -36,3 +36,11 @@ At the owner's request, validation switched to the existing OpenAI API connectio
 The first run (`5f31d399-447f-4ed9-b26e-cfd19095fdef`) waited for server capacity with zero running and was stopped. Railway metrics showed approximately 0.559 GB used of a 2 GB limit. Disabling unused browser access only on the two diagnostic bots let a file-only retry reach the real model. That retry (`33581d67-de05-4f86-81f4-0af7114fce19`) called `agents_select_computer` and failed because This computer was unavailable, not because of provider authentication. No file write/read succeeded. A built-in memory-only retry (`95d69925-d5b0-4344-9588-21b7342a88a8`) again waited on capacity and was stopped. These are failed checks, not promotion evidence. Exports are under `/tmp/mausbot-openai-{live-check,file-only,memory}-20261125`.
 
 Investigate staging admission/resource waits and qualify a supported tool path before restarting live delegation verification. Do not disable resource guards or infer permission persistence from a model response. Production remains unchanged.
+
+## UI-only promotion compatibility check
+
+An authenticated read-only probe on November 25 returned HTTP 404 with `no route: GET /api/reply-drafts/release-contract-probe-20261125` from production. This is a missing route, not a missing draft response. The staging composer polls `/api/reply-drafts/:id` and needs its save/discard/send contracts. Therefore copying the current UI onto the unchanged production runtime cannot release the composer successfully. Integrate its backend into the repaired custom runtime and qualify that combined artifact; do not replace the repair with an ordinary source build.
+
+The same read-only check confirmed all 49 production bot defaults still have `approvalMode: full`. Railway's saved production configuration still uses the scoped November 23 repair launcher and has no staged changes. This verifies saved configuration/defaults only, not every thread or effective runtime file hash.
+
+The isolated composer fixture was rerun successfully, then extended and rerun successfully with explicit assertions that the reply body is transparent while idle and opaque when focused. Editing, auto-resizing, signature rendering, social branding, disabled unsupported Send, and durable draft changes passed. No production deployment or client message was performed.
