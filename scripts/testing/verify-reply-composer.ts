@@ -19,6 +19,9 @@ try {
  const first=await browser("snapshot","-i");console.log(JSON.stringify(first));
  assert.ok(JSON.stringify(first).includes("Gmail"));
  assert.equal((await browser("eval",`getComputedStyle(document.querySelector(".reply-send")).backgroundColor`)).result,"rgb(243, 243, 243)");
+ assert.equal((await browser("eval",`getComputedStyle(document.querySelector('.reply-body')).backgroundColor`)).result,"rgba(0, 0, 0, 0)");
+ await browser("click","textarea[aria-label='Reply message']");
+ assert.equal((await browser("eval",`document.activeElement===document.querySelector('.reply-body') && getComputedStyle(document.querySelector('.reply-body')).backgroundColor!=='rgba(0, 0, 0, 0)'`)).result,true);
  assert.ok(!Object.values(first.refs as Record<string,{name:string;role:string}>).some(value=>value.name==="From"&&value.role==="textbox"));
  const height=async()=>Number((await browser("eval","document.querySelector('textarea[aria-label=\"Reply message\"]').getBoundingClientRect().height")).result);
  const short=await height();assert.ok(short<100,`Short draft too tall: ${short}`);

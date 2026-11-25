@@ -62,12 +62,13 @@ it.skipIf(process.platform === "win32")("answers a bot's plain reads of its own 
       ["Bash", { command: `head -n 20 ${join(revision, "SKILL.md")}` }],
       ["Bash", { command: `grep -rn "notes" ${own}` }],
       ["Read", { file_path: soul }],
+      ["Bash", { command: `cd ${own} && ls && grep -il "notes" *.md` }],
     ] as const) {
       const asked = await ask(socket, tool, input);
       expect(await asked.reply, `${tool} ${JSON.stringify(input)}`).toMatchObject({ id: asked.id, behavior: "allow" });
       expect(await card(bot.threadId, asked.id)).toBeUndefined();
     }
-    await expect.poll(async () => (await api("GET", "/api/decisions")).decisions.filter((row: any) => row.source === "own-files").length).toBe(4);
+    await expect.poll(async () => (await api("GET", "/api/decisions")).decisions.filter((row: any) => row.source === "own-files").length).toBe(5);
 
     for (const [tool, input] of [
       ["Bash", { command: `cat ${join(dataDir, "config.json")}` }],

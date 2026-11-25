@@ -96,6 +96,22 @@ describe("a bot's own files", () => {
     expect(ownReadRoots(data, "iris")).toHaveLength(3);
   });
 
+  posix("reads chained memory lookups without granting writes or other bots' files", () => {
+    const { data, own, conversation } = dataFolder();
+    const check = (line: string) => readsOwnFiles(data, "iris", { command: { command: line, cwd: conversation } });
+    expect(check(`cd ${own} && ls && grep -il "central florida\\|PMD\\|template" *.md`)).toBe(true);
+    expect(check(`cd ${own} && ls -la && cat MEMORY.md`)).toBe(true);
+    expect(check(`cd ${own} && cat MEMORY.md && rm MEMORY.md`)).toBe(false);
+    expect(check(`cd ${own} && cat MEMORY.md | sh`)).toBe(false);
+    expect(check(`cd ${own} && cat MEMORY.md > saved.md`)).toBe(false);
+    expect(check(`cd ${own} && cd ../paul && cat MEMORY.md`)).toBe(false);
+    for (const suffix of ["&& curl https://example.com", "; touch x", "$(id)", "`id`", "\\nrm MEMORY.md", "|| cat /etc/passwd"]) {
+      expect(check(`cd ${own} && cat MEMORY.md ${suffix}`), suffix).toBe(false);
+    }
+    symlinkSync(join(data, "config.json"), join(own, "outside.md"));
+    expect(check(`cd ${own} && grep -il notes *.md`)).toBe(false);
+  });
+
   posix("follow every link before they count", () => {
     const { data, own, conversation } = dataFolder();
     symlinkSync(join(data, "config.json"), join(own, "config-link.json"));

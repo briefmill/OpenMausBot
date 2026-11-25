@@ -63,3 +63,13 @@ IMPORTANT REMAINING WORK: social delivery adapters/account authorization are not
 Staging seeding adds one clearly synthetic Instagram card to the existing composer preview chat, once, with sending disabled. New bundled helper must be built after every server build using `node deploy/railway-staging/build-preview.mjs`.
 
 Provider signature settings import remains unfinished; current signatures use saved native-mailbox defaults or a user-pasted signature. Other earlier outstanding items, including busy-turn voice/message queue controls and browser teaching recorder, are not completed by this PR.
+
+## November 24 follow-up
+
+The composer is a shared reply surface for email, Slack and social messages. The body now blends with the card while idle and uses the lighter inset surface on hover or keyboard focus; disabled bodies stay dark. This change applies through the shared ReplyBody component.
+
+Client build passed. The isolated composer fixture passed for rendered email/signature, compact editor sizing, durable edited drafts, and Instagram branding with unsupported social sending disabled. Targeted reply store/routes, Slack delivery and signature tests passed (25 tests); changed-file lint passed. No external messages were sent. This does not establish provider delivery or a staging deployment.
+
+Gmail signature conversion now validates the exact sending alias and sanitizes provider HTML with a plain-text alternative. The authenticated settings lookup remains unwired. OAuth-only Gmail delivery and social delivery remain unfinished; do not describe the conversion helper or synthetic preview as a working connected provider.
+
+Slack delivery now checks the pinned scope/workspace/channel/thread/sender, pending state, expiry, edited text readback and a real provider receipt. Local Front Desk source confirms scope/state/expiry/thread/receipt fields, but that older checkout lacks both sender_user_id and PATCH support. Verify the deployed Front Desk contract before claiming Slack composer delivery works. No production or staging deployment was performed in this follow-up.
