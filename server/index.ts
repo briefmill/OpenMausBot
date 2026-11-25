@@ -1,9 +1,9 @@
 import { customMcpServers } from "./config.ts";
 import { emailProvider } from "../shared/email-provider.ts";
 import { emailReplyBody, sanitizeSignature } from "./reply/signature.ts";
-import { ReplyDraftStore, ReplyNotSent } from "./reply/store.ts";
+import { ReplyNotSent } from "./reply/store.ts";
 import { replyContentSchema, replyInboundSchema } from "../shared/reply-draft.ts";
-import { createReplyDraftRoutes } from "./routes/reply-drafts.ts";
+import { createReplyBackend } from "./reply/backend.ts";
 import { frontDeskDraftRequest } from "./routes/message-review.ts";
 import { deliverSlackReply } from "./reply/slack-delivery.ts";
 import { workspaceAccountBinding, workspaceAccountCallProblem, workspaceRoutineGrant } from "./hosted-workspace-policy.ts";
@@ -9195,8 +9195,7 @@ const teamMemory = new TeamMemory(join(DATA_DIR, "team-memory.json"));
 const teamMemoryRequests = createTeamMemoryRequests({ teamMemory, store, sectionKey: sectionContextKey, decide: (row) => appendDecision(DATA_DIR, row) });
 const outsideWrites = createOutsideWrites({ store, notify, language: (threadId) => threadLanguage(threadId), decide: (row) => appendDecision(DATA_DIR, row),
   writeMemory: (botId, threadId, change) => { const written = botMemoryUpdate(teamHost.layer(botId, threadId), change, { source: memorySourceLabel({ room: store.groupByThread(threadId), task: store.taskByThread(teamHost.baseBotId(botId), threadId), threadId }), aboutMe: null, prefer: null }); return written.ok ? null : written.error; } });
-const replyDrafts = new ReplyDraftStore(join(DATA_DIR,"reply-drafts"));
-ROUTES.push(createReplyDraftRoutes({store:replyDrafts,
+const {store:replyDrafts,route:replyDraftRoutes} = createReplyBackend({dataDir:DATA_DIR,
  provider:from=>{const account=emailService.store.get(from);return emailProvider(from,account?[account.imap.host,...(account.smtp?[account.smtp.host]:[])]:[]);},
  signature:from=>{const signature=emailService.store.get(from)?.signature;return signature?sanitizeSignature(signature):undefined;},
  saveSignature:(from,signature)=>{const account=emailService.store.get(from);if(!account)throw new ReplyNotSent("Connect this sending mailbox before saving its default signature.");emailService.store.put({...account,signature:sanitizeSignature(signature)});},
@@ -9213,7 +9212,8 @@ ROUTES.push(createReplyDraftRoutes({store:replyDrafts,
   if(!bot||!draft.destination||!Object.values(customMcpServers(cfg,bot.mcpServers,bot.id)).some(server=>"url" in server&&typeof server.url==="string"&&server.url===`https://watcher-production-86cc.up.railway.app/mcp/scoped/${draft.destination!.scope}`))throw new ReplyNotSent("Slack access is no longer assigned to this bot. Nothing was sent.");
   return deliverSlackReply(draft,frontDeskDraftRequest);
  }
-}));
+});
+ROUTES.push(replyDraftRoutes);
 const outboundRequests = new OutboundRequestService();
 const outboundHold = createOutboundHold({ store, dataDir: DATA_DIR, outboundRequests, holdMs: OUTBOUND_HOLD_MS, connectorThread, activeGroupTurnForBot, notify });
 
